@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "GARAGE_TABLE_CONNECTION": "UseDevelopmentStorage=true",
+    "GARAGE_TABLE_NAME": "garages"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}
