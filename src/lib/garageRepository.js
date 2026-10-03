@@ -1,48 +1,79 @@
 'use strict';
 
-const { TableClient } = require('@azure/data-tables');
+const sql = require('mssql');
 
-const PARTITION_KEY = 'garage';
-let clientPromise;
+const DUPLICATE_KEY_ERRORS = [2601, 2627];
+let poolPromise;
 
-function getClient() {
-  if (!clientPromise) {
-    const connection = process.env.GARAGE_TABLE_CONNECTION || 'UseDevelopmentStorage=true';
-    const tableName = process.env.GARAGE_TABLE_NAME || 'garages';
-    const client = TableClient.fromConnectionString(connection, tableName, {
-      allowInsecureConnection: connection.includes('UseDevelopmentStorage'),
-    });
-    clientPromise = client.createTable().then(() => client);
-    clientPromise.catch(() => { clientPromise = undefined; });
+function getPool() {
+  if (!poolPromise) {
+    const connection = process.env.SQL_CONNECTION_STRING;
+    if (!connection) throw new Error('SQL_CONNECTION_STRING is not configured');
+    poolPromise = new sql.ConnectionPool(connection).connect();
+    poolPromise.catch(() => { poolPromise = undefined; });
   }
-  return clientPromise;
+  return poolPromise;
 }
 
 /**
  * Persists a new garage registration (status "pending").
- * The KvK number is the row key, so a duplicate registration throws with statusCode 409.
+ * A duplicate KvK number throws an error with statusCode 409.
  */
 async function createGarage(garage) {
-  const client = await getClient();
-  const { contact, specializations, accreditations, liftCount, ...rest } = garage;
-  const id = garage.kvkNumber;
-  const entity = {
-    partitionKey: PARTITION_KEY,
-    rowKey: id,
-    ...rest,
-    contactFirstName: contact.firstName,
-    contactLastName: contact.lastName,
-    contactJobTitle: contact.jobTitle,
-    contactEmail: contact.email,
-    contactPhone: contact.phone,
-    specializations: JSON.stringify(specializations),
-    accreditations: JSON.stringify(accreditations),
-    status: 'pending',
-    registeredAt: new Date().toISOString(),
-  };
-  if (liftCount !== null) entity.liftCount = liftCount;
-  await client.createEntity(entity);
-  return { id, status: entity.status, registeredAt: entity.registeredAt };
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const { contact } = garage;
+    const result = await new sql.Request(tx)
+      .input('companyName', sql.NVarChar(200), garage.companyName)
+      .input('kvkNumber', sql.Char(8), garage.kvkNumber)
+      .input('vatNumber', sql.VarChar(14), garage.vatNumber || null)
+      .input('street', sql.NVarChar(200), garage.street)
+      .input('postalCode', sql.Char(6), garage.postalCode)
+      .input('city', sql.NVarChar(100), garage.city)
+      .input('website', sql.NVarChar(500), garage.website || null)
+      .input('contactFirstName', sql.NVarChar(100), contact.firstName)
+      .input('contactLastName', sql.NVarChar(100), contact.lastName)
+      .input('contactJobTitle', sql.NVarChar(100), contact.jobTitle || null)
+      .input('contactEmail', sql.NVarChar(254), contact.email)
+      .input('contactPhone', sql.NVarChar(30), contact.phone)
+      .input('serviceArea', sql.NVarChar(500), garage.serviceArea)
+      .input('employeeCount', sql.VarChar(10), garage.employeeCount || null)
+      .input('liftCount', sql.Int, garage.liftCount)
+      .input('hasLiabilityInsurance', sql.Bit, garage.hasLiabilityInsurance)
+      .input('iban', sql.VarChar(34), garage.iban)
+      .input('newsletterOptIn', sql.Bit, garage.newsletterOptIn)
+      .query(`
+        INSERT INTO dbo.Garages (
+          CompanyName, KvkNumber, VatNumber, Street, PostalCode, City, Website,
+          ContactFirstName, ContactLastName, ContactJobTitle, ContactEmail, ContactPhone,
+          ServiceArea, EmployeeCount, LiftCount, HasLiabilityInsurance, Iban, AcceptedTermsAt, NewsletterOptIn)
+        OUTPUT inserted.Id, inserted.Status, inserted.RegisteredAt
+        VALUES (
+          @companyName, @kvkNumber, @vatNumber, @street, @postalCode, @city, @website,
+          @contactFirstName, @contactLastName, @contactJobTitle, @contactEmail, @contactPhone,
+          @serviceArea, @employeeCount, @liftCount, @hasLiabilityInsurance, @iban, SYSUTCDATETIME(), @newsletterOptIn)`);
+    const row = result.recordset[0];
+
+    const insertCodes = async (table, codes) => {
+      for (const code of codes) {
+        await new sql.Request(tx)
+          .input('garageId', sql.UniqueIdentifier, row.Id)
+          .input('code', sql.VarChar(30), code)
+          .query(`INSERT INTO dbo.${table} (GarageId, Code) VALUES (@garageId, @code)`);
+      }
+    };
+    await insertCodes('GarageSpecializations', garage.specializations);
+    await insertCodes('GarageAccreditations', garage.accreditations);
+
+    await tx.commit();
+    return { id: row.Id, status: row.Status, registeredAt: row.RegisteredAt.toISOString() };
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    if (DUPLICATE_KEY_ERRORS.includes(err.number)) err.statusCode = 409;
+    throw err;
+  }
 }
 
 module.exports = { createGarage };

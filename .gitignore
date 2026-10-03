@@ -4,5 +4,5 @@ local.settings.json
 __azurite_db_*.json
 __blobstorage__/
 __queuestorage__/
-.vscode/
+
 *.log

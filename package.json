@@ -6,11 +6,12 @@
   "main": "src/functions/*.js",
   "scripts": {
     "start": "func start",
-    "test": "node --test"
+    "test": "node --test",
+    "migrate": "node scripts/migrate.js"
   },
   "dependencies": {
-    "@azure/data-tables": "^13.3.0",
-    "@azure/functions": "^4.7.0"
+    "@azure/functions": "^4.7.0",
+    "mssql": "^12.7.2"
   },
   "engines": {
     "node": ">=20"
