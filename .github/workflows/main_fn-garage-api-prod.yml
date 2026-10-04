@@ -73,6 +73,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E0CA842073714EA8BB956961D8A3A06D }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_EA1F5C5510824B84A2F4501DA1D47B74 }}
 
+      - name: Show identity used for migrations (temporary diagnostic)
+        run: az account show --query '{clientId:user.name, type:user.type, tenant:tenantId}' -o json
+
       - name: Run database migrations
         run: npm run migrate
 
