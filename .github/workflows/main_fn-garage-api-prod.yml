@@ -74,7 +74,9 @@ jobs:
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_EA1F5C5510824B84A2F4501DA1D47B74 }}
 
       - name: Show identity used for migrations (temporary diagnostic)
-        run: az account show --query '{clientId:user.name, type:user.type, tenant:tenantId}' -o json
+        run: |
+          az account show --query user.name -o tsv | sed -E 's/^(.{8}).*(.{4})$/login clientId: \1...\2/'
+          az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv | node scripts/token-claims.js
 
       - name: Run database migrations
         run: npm run migrate
