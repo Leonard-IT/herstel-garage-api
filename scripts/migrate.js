@@ -2,7 +2,8 @@
 
 // Applies db/migrations/*.sql in order and records them in dbo.SchemaMigrations.
 // Usage: SQL_CONNECTION_STRING="..." node scripts/migrate.js   (reads local.settings.json if unset)
-// The target database is created if it does not exist (local container only; on Azure create it in the portal).
+// Pass --create-database to create the database first if it does not exist (local container only;
+// on Azure the database is created in the portal and the pipeline identity has no rights on master).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -18,9 +19,11 @@ async function main() {
   const config = sql.ConnectionPool.parseConnectionString(connectionString());
   const database = config.database;
 
-  const master = await new sql.ConnectionPool({ ...config, database: 'master' }).connect();
-  await master.request().query(`IF DB_ID(N'${database.replace(/'/g, "''")}') IS NULL CREATE DATABASE [${database.replace(/]/g, ']]')}]`);
-  await master.close();
+  if (process.argv.includes('--create-database')) {
+    const master = await new sql.ConnectionPool({ ...config, database: 'master' }).connect();
+    await master.request().query(`IF DB_ID(N'${database.replace(/'/g, "''")}') IS NULL CREATE DATABASE [${database.replace(/]/g, ']]')}]`);
+    await master.close();
+  }
 
   const pool = await new sql.ConnectionPool(config).connect();
   await pool.request().query(`

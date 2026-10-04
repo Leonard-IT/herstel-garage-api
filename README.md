@@ -54,7 +54,7 @@ Requires Node 20+, Docker, [Azure Functions Core Tools v4](https://learn.microso
 ```sh
 npm install
 docker compose up -d --wait        # local SQL Server on localhost:1433
-npm run migrate                    # creates database "herstel" and applies db/migrations
+npm run migrate:local              # creates database "herstel" and applies db/migrations
 npx azurite --silent --location .azurite &
 func start                         # http://localhost:7071
 npm test
@@ -64,6 +64,6 @@ Copy `local.settings.example.json` to `local.settings.json` if it is missing.
 
 ## Database
 
-Schema lives in `db/migrations/*.sql` (batches separated by `GO`); `npm run migrate` applies new files in order and records them in `dbo.SchemaMigrations`.
+Schema lives in `db/migrations/*.sql` (batches separated by `GO`); `npm run migrate` applies new files in order (`migrate:local` also creates the database; use it only against the local container) and records them in `dbo.SchemaMigrations`.
 Configuration: `SQL_CONNECTION_STRING` (local.settings.json locally, app setting in Azure).
 Azure with managed identity (no password): `Server=<name>.database.windows.net;Database=herstel;Authentication=Active Directory Default;Encrypt=true`
