@@ -32,7 +32,7 @@ app.http('registerGarage', {
           jsonBody: { error: 'already_registered', message: 'A garage with this KvK number is already registered' },
         };
       }
-      context.error('Garage registration failed', err);
+      context.error('Garage registration failed.', err);
       return { status: 500, jsonBody: { error: 'internal_error', message: 'Registration failed, please try again later' } };
     }
   },
