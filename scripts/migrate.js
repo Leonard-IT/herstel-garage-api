@@ -8,6 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const sql = require('mssql');
+const { buildSqlConfig } = require('../src/lib/sqlConfig');
 
 function connectionString() {
   if (process.env.SQL_CONNECTION_STRING) return process.env.SQL_CONNECTION_STRING;
@@ -16,7 +17,7 @@ function connectionString() {
 }
 
 async function main() {
-  const config = sql.ConnectionPool.parseConnectionString(connectionString());
+  const config = buildSqlConfig(connectionString());
   const database = config.database;
 
   if (process.argv.includes('--create-database')) {

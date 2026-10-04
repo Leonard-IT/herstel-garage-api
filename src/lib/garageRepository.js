@@ -1,15 +1,14 @@
 'use strict';
 
 const sql = require('mssql');
+const { buildSqlConfig } = require('./sqlConfig');
 
 const DUPLICATE_KEY_ERRORS = [2601, 2627];
 let poolPromise;
 
 function getPool() {
   if (!poolPromise) {
-    const connection = process.env.SQL_CONNECTION_STRING;
-    if (!connection) throw new Error('SQL_CONNECTION_STRING is not configured');
-    poolPromise = new sql.ConnectionPool(connection).connect();
+    poolPromise = new sql.ConnectionPool(buildSqlConfig(process.env.SQL_CONNECTION_STRING)).connect();
     poolPromise.catch(() => { poolPromise = undefined; });
   }
   return poolPromise;
