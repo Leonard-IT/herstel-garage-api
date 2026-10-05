@@ -1,14 +1,14 @@
 'use strict';
 
 const sql = require('mssql');
-const { buildSqlConfig } = require('./sqlConfig');
+const { buildSqlConfig, connectWithRetry } = require('./sqlConfig');
 
 const DUPLICATE_KEY_ERRORS = [2601, 2627];
 let poolPromise;
 
 function getPool() {
   if (!poolPromise) {
-    poolPromise = new sql.ConnectionPool(buildSqlConfig(process.env.SQL_CONNECTION_STRING)).connect();
+    poolPromise = connectWithRetry(buildSqlConfig(process.env.SQL_CONNECTION_STRING));
     poolPromise.catch(() => { poolPromise = undefined; });
   }
   return poolPromise;

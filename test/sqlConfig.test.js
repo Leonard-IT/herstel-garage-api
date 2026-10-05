@@ -13,6 +13,13 @@ test('Active Directory Default uses Entra ID (DefaultAzureCredential), not a SQL
   assert.strictEqual(config.database, 'herstel');
 });
 
+test('connection string as copied from the Azure portal (quoted Authentication value)', () => {
+  const config = buildSqlConfig('Server=tcp:herstel.database.windows.net,1433;Initial Catalog=sqldb-herstel-prod;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";');
+  assert.strictEqual(config.authentication.type, 'azure-active-directory-default');
+  assert.strictEqual(config.server, 'herstel.database.windows.net');
+  assert.strictEqual(config.database, 'sqldb-herstel-prod');
+});
+
 test('Active Directory Managed Identity also maps to DefaultAzureCredential', () => {
   const config = buildSqlConfig('Server=x.database.windows.net;Database=herstel;Authentication=Active Directory Managed Identity;Encrypt=true');
   assert.strictEqual(config.authentication.type, 'azure-active-directory-default');

@@ -8,26 +8,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const sql = require('mssql');
-const { buildSqlConfig } = require('../src/lib/sqlConfig');
+const { buildSqlConfig, connectWithRetry } = require('../src/lib/sqlConfig');
 
 function connectionString() {
   if (process.env.SQL_CONNECTION_STRING) return process.env.SQL_CONNECTION_STRING;
   const settings = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'local.settings.json'), 'utf8'));
   return settings.Values.SQL_CONNECTION_STRING;
-}
-
-// A serverless Azure SQL database that is auto-paused needs up to a minute to resume on the first connection,
-// which exceeds the default 15s connect timeout, so allow a longer timeout and retry a few times.
-async function connectWithRetry(config, attempts = 4) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await new sql.ConnectionPool({ ...config, connectionTimeout: config.connectionTimeout ?? 60000 }).connect();
-    } catch (err) {
-      if (attempt >= attempts) throw err;
-      console.log(`Connection attempt ${attempt} failed (${err.message}); retrying in 10s (database may be resuming)`);
-      await new Promise((resolve) => setTimeout(resolve, 10000));
-    }
-  }
 }
 
 async function main() {
@@ -40,7 +26,7 @@ async function main() {
     await master.close();
   }
 
-  const pool = await connectWithRetry(config);
+  const pool = await connectWithRetry(config, { attempts: 4, timeoutMs: 60000, delayMs: 10000 });
   await pool.request().query(`
     IF OBJECT_ID('dbo.SchemaMigrations') IS NULL
       CREATE TABLE dbo.SchemaMigrations (Name VARCHAR(200) NOT NULL PRIMARY KEY, AppliedAt DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME())`);
