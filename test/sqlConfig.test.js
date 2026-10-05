@@ -18,6 +18,17 @@ test('Active Directory Managed Identity also maps to DefaultAzureCredential', ()
   assert.strictEqual(config.authentication.type, 'azure-active-directory-default');
 });
 
+test('SQL_ACCESS_TOKEN overrides the credential chain', () => {
+  process.env.SQL_ACCESS_TOKEN = 'token-123';
+  try {
+    const config = buildSqlConfig('Server=x.database.windows.net;Database=herstel;Authentication=Active Directory Default;Encrypt=true');
+    assert.strictEqual(config.authentication.type, 'azure-active-directory-access-token');
+    assert.strictEqual(config.authentication.options.token, 'token-123');
+  } finally {
+    delete process.env.SQL_ACCESS_TOKEN;
+  }
+});
+
 test('SQL login connection strings are left alone', () => {
   const config = buildSqlConfig('Server=localhost,1433;Database=herstel;User Id=sa;Password=pw;Encrypt=true;TrustServerCertificate=true');
   assert.strictEqual(config.authentication, undefined);

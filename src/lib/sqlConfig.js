@@ -11,7 +11,11 @@ const ENTRA_AUTHENTICATION = /(?:^|;)\s*Authentication\s*=\s*Active\s*Directory\
 function buildSqlConfig(connectionString) {
   if (!connectionString) throw new Error('SQL_CONNECTION_STRING is not configured');
   const config = sql.ConnectionPool.parseConnectionString(connectionString);
-  if (ENTRA_AUTHENTICATION.test(connectionString)) {
+  if (process.env.SQL_ACCESS_TOKEN) {
+    // Explicit token (pipeline): uses exactly the identity of the Azure CLI login instead of the credential chain.
+    delete config.authentication_type;
+    config.authentication = { type: 'azure-active-directory-access-token', options: { token: process.env.SQL_ACCESS_TOKEN } };
+  } else if (ENTRA_AUTHENTICATION.test(connectionString)) {
     delete config.authentication_type;
     config.authentication = { type: 'azure-active-directory-default' };
   }

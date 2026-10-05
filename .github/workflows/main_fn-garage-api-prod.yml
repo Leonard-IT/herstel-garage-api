@@ -79,7 +79,11 @@ jobs:
           az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv | node scripts/token-claims.js
 
       - name: Run database migrations
-        run: npm run migrate
+        run: |
+          SQL_ACCESS_TOKEN=$(az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv)
+          echo "::add-mask::$SQL_ACCESS_TOKEN"
+          export SQL_ACCESS_TOKEN
+          npm run migrate
 
   deploy:
     runs-on: ubuntu-latest
