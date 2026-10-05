@@ -54,7 +54,7 @@ jobs:
       contents: read #This is required for actions/checkout
     env:
       # Passwordless: the identity from azure/login must exist as a user in the database (see README)
-      SQL_CONNECTION_STRING: 'Server=herstel.database.windows.net;Database=herstel;Authentication=Active Directory Default;Encrypt=true'
+      SQL_CONNECTION_STRING: 'Server=herstel.database.windows.net;Database=sqldb-herstel-prod;Authentication=Active Directory Default;Encrypt=true'
 
     steps:
       - uses: actions/checkout@v4

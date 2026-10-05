@@ -66,4 +66,4 @@ Copy `local.settings.example.json` to `local.settings.json` if it is missing.
 
 Schema lives in `db/migrations/*.sql` (batches separated by `GO`); `npm run migrate` applies new files in order (`migrate:local` also creates the database; use it only against the local container) and records them in `dbo.SchemaMigrations`.
 Configuration: `SQL_CONNECTION_STRING` (local.settings.json locally, app setting in Azure).
-Azure with managed identity (no password): `Server=<name>.database.windows.net;Database=herstel;Authentication=Active Directory Default;Encrypt=true`
+Azure with managed identity (no password): `Server=<name>.database.windows.net;Database=sqldb-herstel-prod;Authentication=Active Directory Default;Encrypt=true`
