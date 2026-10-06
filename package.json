@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@azure/functions": "^4.7.0",
+    "@azure/identity": "^4.13.3",
+    "@azure/storage-blob": "^12.34.0",
     "mssql": "^12.7.2"
   },
   "engines": {

@@ -1,18 +1,9 @@
 'use strict';
 
 const sql = require('mssql');
-const { buildSqlConfig, connectWithRetry } = require('./sqlConfig');
+const { getPool } = require('./db');
 
 const DUPLICATE_KEY_ERRORS = [2601, 2627];
-let poolPromise;
-
-function getPool() {
-  if (!poolPromise) {
-    poolPromise = connectWithRetry(buildSqlConfig(process.env.SQL_CONNECTION_STRING));
-    poolPromise.catch(() => { poolPromise = undefined; });
-  }
-  return poolPromise;
-}
 
 /**
  * Persists a new garage registration (status "pending").

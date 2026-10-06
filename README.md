@@ -47,6 +47,37 @@ Optional: `vatNumber`, `website`, `contact.jobTitle`, `employeeCount`, `liftCoun
 | 422 | Validation failed: `{ error, message, details: { field: message } }` |
 | 500 | Unexpected error |
 
+### Repair requests
+
+Images go straight from the browser to Blob Storage (container `damage-images`, private) using short-lived SAS URLs.
+
+1. `POST /api/damage-reports/upload-urls` with `{ "files": [{ "contentType": "image/jpeg" }] }` (jpeg, png, webp, heic; max 10 files) returns `{ uploads: [{ blobPath, uploadUrl, expiresAt, headers }] }`. The URL is valid for 10 minutes and write-only.
+2. The browser `PUT`s each file to `uploadUrl` with the returned `headers` (`x-ms-blob-type`, `Content-Type`). Max 10 MB per image.
+3. `POST /api/repair-requests` with the `blobPath`s:
+
+```json
+{
+  "customer": { "firstName": "Piet", "lastName": "Pietersen", "email": "piet@example.nl", "phone": "06 12345678" },
+  "car": { "licensePlate": "AB-123-C", "make": "Volkswagen", "model": "Golf", "buildYear": 2018 },
+  "damages": [
+    {
+      "description": "Deuk in het linker voorportier",
+      "location": "left",
+      "images": ["pending/<guid>.jpg"],
+      "preferences": ["rental-car", "fast-repair"]
+    }
+  ]
+}
+```
+
+Each damage becomes one damage report plus one repair request (with its own preferences). `location` is optional (`front`, `rear`, `left`, `right`, `roof`, `windscreen`, `wheels`, `interior`, `other`), `preferences` are slugs from `CustomerRepairPreferences` (add or deactivate rows there to change the list), 1-10 images per damage, max 10 damages. Responds `201 { repairRequests: [{ id, damageReportId, status, createdAt }] }`, or `422` with `details` per field (including unknown preference slugs and images that were not uploaded).
+
+`GET /api/repair-preferences` returns the selectable preferences as `{ preferences: [{ slug, name }] }` (active rows only, in `SortOrder`) so the UI does not hardcode them.
+
+The customer is reused by email and the car by license plate; stored details are never overwritten from the request. Ownership is only recorded when the car has no current owner.
+
+Storage setup in Azure: a lifecycle rule that deletes blobs with prefix `damage-images/pending/` after 1 day (abandoned uploads), CORS allowing `PUT` from the website origin, and for the Function App's managed identity the roles *Storage Blob Data Contributor* and *Storage Blob Delegator*. App setting: `IMAGE_STORAGE_ACCOUNT_NAME` (locally `IMAGE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true`). The container `damage-images` must exist.
+
 ## Local development
 
 Requires Node 20+, Docker, [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local) and [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) (the Functions host itself needs a storage account).
@@ -55,7 +86,7 @@ Requires Node 20+, Docker, [Azure Functions Core Tools v4](https://learn.microso
 npm install
 docker compose up -d --wait        # local SQL Server on localhost:1433
 npm run migrate:local              # creates database "herstel" and applies db/migrations
-npx azurite --silent --location .azurite &
+npx azurite --silent --skipApiVersionCheck --location .azurite &   # flag needed: the Storage SDK may be newer than Azurite
 func start                         # http://localhost:7071
 npm test
 ```
