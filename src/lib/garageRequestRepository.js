@@ -6,9 +6,10 @@ const { getPool } = require('./db');
 const LIST_LIMIT = 50;
 
 // Deliberately selects no personal data: nothing from Customers and no license plate. A garage sees the car's make,
-// model and year, the damage and the preferences; contact details come later, once a garage has taken the job.
+// model and year, the damage and the preferences, and only the 4-digit postal area; contact details come later,
+// once a garage has taken the job.
 const REQUEST_COLUMNS = `
-  rr.Id, rr.CreatedAt, dr.Id AS DamageReportId, dr.Description, dr.DamageLocation,
+  rr.Id, rr.CreatedAt, rr.PostalCode, dr.Id AS DamageReportId, dr.Description, dr.DamageType, dr.DamageLocation,
   c.Make, c.Model, c.BuildYear`;
 const REQUEST_JOINS = `
   FROM dbo.RepairRequests rr
@@ -21,7 +22,9 @@ const toRequest = (row) => ({
   createdAt: row.CreatedAt.toISOString(),
   car: { make: row.Make, model: row.Model, buildYear: row.BuildYear },
   description: row.Description,
+  damageType: row.DamageType,
   location: row.DamageLocation,
+  postalArea: row.PostalCode ? row.PostalCode.slice(0, 4) : null,
 });
 
 async function loadPreferences(pool, whereClause, bind) {

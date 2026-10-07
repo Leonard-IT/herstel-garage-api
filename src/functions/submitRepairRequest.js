@@ -61,13 +61,27 @@ app.http('submitRepairRequest', {
         damages.push({
           id,
           description: damage.description,
+          damageType: damage.damageType,
           location: damage.location,
           images,
           preferenceIds: damage.preferences.map((slug) => preferences.get(slug)),
         });
       }
 
-      const requests = await createRepairRequests({ customer: value.customer, car: value.car, damages });
+      const { requests, duplicate } = await createRepairRequests({
+        submissionId: value.submissionId,
+        postalCode: value.postalCode,
+        customer: value.customer,
+        car: value.car,
+        damages,
+      });
+      if (duplicate) {
+        // A retry of a submission that was already stored: keep the first result, drop this attempt's copies.
+        await discard(copied);
+        await discard(value.damages.flatMap((d) => d.images));
+        context.log(`Duplicate submission ${value.submissionId}, returning the existing requests`);
+        return { status: 200, jsonBody: { repairRequests: requests } };
+      }
       await discard(value.damages.flatMap((d) => d.images));
       context.log(`Repair requests created: ${requests.map((r) => r.id).join(', ')}`);
       return { status: 201, jsonBody: { repairRequests: requests } };

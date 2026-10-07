@@ -4,8 +4,11 @@ const MAX_DAMAGES = 10;
 const MAX_IMAGES_PER_DAMAGE = 10;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' };
+// Same vocabulary as the garage specializations, so requests can be matched to garages.
+const DAMAGE_TYPES = ['lakschade', 'carrosserie', 'ruitschade', 'bumper', 'ev', 'overig'];
 const DAMAGE_LOCATIONS = ['front', 'rear', 'left', 'right', 'roof', 'windscreen', 'wheels', 'interior', 'other'];
 // Paths handed out by createDamageImageUploadUrls: pending/<guid>.<ext>
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PENDING_BLOB_PATH = /^pending\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|heic)$/;
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -32,6 +35,13 @@ function validateRepairRequest(body) {
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors['customer.email'] = 'Must be a valid email address';
   const phone = str(customer.phone);
   if (phone.length > 30 || phone.replace(/\D/g, '').length < 8) errors['customer.phone'] = 'Must be a valid phone number';
+
+  const postalCode = str(body.postalCode).replace(/\s/g, '').toUpperCase();
+  if (!/^[1-9]\d{3}[A-Z]{2}$/.test(postalCode)) errors.postalCode = 'Expected format 1234 AB';
+
+  // One id per form submission: a retry of the same submission must not create duplicates.
+  const submissionId = str(body.submissionId).toLowerCase();
+  if (!GUID.test(submissionId)) errors.submissionId = 'Must be a GUID generated once per submission';
 
   const licensePlate = str(car.licensePlate).replace(/[\s-]/g, '').toUpperCase();
   if (!/^[A-Z0-9]{6}$/.test(licensePlate)) errors['car.licensePlate'] = 'Must be a valid Dutch license plate';
@@ -64,6 +74,9 @@ function validateRepairRequest(body) {
       if (!description) errors[`${prefix}.description`] = 'Required';
       else if (description.length > 2000) errors[`${prefix}.description`] = 'Too long (max 2000)';
 
+      const damageType = str(damage.damageType);
+      if (!DAMAGE_TYPES.includes(damageType)) errors[`${prefix}.damageType`] = `Must be one of: ${DAMAGE_TYPES.join(', ')}`;
+
       const location = str(damage.location);
       if (location && !DAMAGE_LOCATIONS.includes(location)) {
         errors[`${prefix}.location`] = `Must be one of: ${DAMAGE_LOCATIONS.join(', ')}`;
@@ -91,13 +104,15 @@ function validateRepairRequest(body) {
         preferences = [...new Set(rawPreferences)];
       }
 
-      damages.push({ description, location: location || null, images, preferences });
+      damages.push({ description, damageType, location: location || null, images, preferences });
     });
   }
 
   if (Object.keys(errors).length) return { errors };
   return {
     value: {
+      submissionId,
+      postalCode,
       customer: { firstName, lastName, email, phone },
       car: { licensePlate, make, model, buildYear },
       damages,
@@ -133,4 +148,5 @@ module.exports = {
   MAX_IMAGE_BYTES,
   IMAGE_TYPES,
   DAMAGE_LOCATIONS,
+  DAMAGE_TYPES,
 };

@@ -38,11 +38,38 @@ Open work on this API and the garage dashboard (`herstel-garage-web`).
   an invite. Only worth it once the invite flow exists.
 - Until this is built: insert `GarageUsers` rows manually when a garage is approved.
 
-## Customer location on repair requests
+## Matching garages to requests
 
-The plan was to show the customer's area to garages, but we don't collect it. Without it, garages can't judge distance, which
-matters when deciding whether to take a job. Add an optional postal code to the request form and to `RepairRequests`, and show
-the area (not the full postal code) to garages. Needs a new migration, since 002 is already applied remotely. Next small follow-up.
+Done (migration 004): requests carry a `DamageType` (same vocabulary as garage specializations) and the customer's `PostalCode`;
+garages see the damage type and the 4-digit area only.
+
+Still to do, so garages can be matched and judge distance:
+
+- `Garages.ServiceArea` is free text and cannot be queried. Replace it with structured coverage (a geocoded point plus a radius,
+  or a `GarageServicePostalAreas` table) and geocode garage and request locations.
+- Use damage type and distance to decide which garages see a request, and for the auction duration per damage type (PROJECT.md).
+- Show distance to the garage in the dashboard instead of only the postal area.
+
+## Data model follow-ups (from the database review)
+
+- **Car data from RDW.** Car make, model and year are whatever the first submitter typed, and are never corrected. Look the plate up in
+  the RDW open data and store make, model, build year and fuel type from there; keep user input as fallback.
+- **GDPR.** No way to delete or anonymize a customer: `Customers` is referenced by foreign keys without cascade, and photos are personal
+  data. Add `DeletedAt` and an anonymize routine, plus a retention period for cancelled or unassigned requests (including the blobs).
+- **Offers.** `Offers` table (`RepairRequestId`, `GarageId`, `Amount DECIMAL(10,2)`, intake date, inclusions, status) and the assigned
+  garage on the request.
+- **Status history.** `RepairRequests.Status` only knows `open | in_progress | completed | cancelled`. PROJECT.md also needs "in optie"
+  (exclusivity window, who and until when) and the price-clock start. Add a `RepairRequestEvents` table (who, what, when) as audit trail.
+- **Taxatie.** Home for the independent appraisal: amount, expert, date.
+- **Photo angle.** Optional `Label` on `DamageReportImages` (front, rear, close-up...).
+- **Lookup tables.** `GarageSpecializations.Code`, `GarageAccreditations.Code`, `DamageLocation`, `DamageType` and `RepairRequests.Status`
+  are only validated in code or by CHECK. Make them lookup tables like `CustomerRepairPreferences`.
+- **Garage contact person vs `GarageUsers`.** `Garages` stores contact name and email, which duplicates `GarageUsers` once invitations exist.
+  Treat the registration contact as the first owner.
+- **Approval trail.** `Garages` has `Status` but not who approved or rejected, when, or why (`ApprovedAt`, `ApprovedBy`, rejection reason).
+- **`UpdatedAt`** on tables whose rows change (`Garages`, `RepairRequests`, `Customers`).
+- **Minor.** `BlobPath` and `ContentType` could be `VARCHAR`; decide whether the IBAN needs column encryption; add an issuer column to
+  `GarageUsers` if logins can come from two tenants.
 
 ## Taking a job
 
@@ -60,7 +87,7 @@ data, when the offer flow is built (see "Taking a job").
 - Create the Entra External ID tenant, the `garage-signin` user flow and the two app registrations; fill in `auth-config.js`.
 - Enable authentication on the Function App ("Allow unauthenticated access") and verify that Easy Auth accepts bearer tokens from the
   external tenant. If not, validate the JWT inside the Function instead.
-- Apply migrations 002 (already applied) and 003 to the remote database.
+- Apply migrations 003 and 004 to the remote database (002 is already applied). The pipeline runs them on the next push to main.
 
 ## Admin dashboard
 

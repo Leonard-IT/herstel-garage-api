@@ -3,6 +3,9 @@
 const sql = require('mssql');
 const { getPool } = require('./db');
 
+const DUPLICATE_KEY_ERRORS = [2601, 2627];
+const SUBMISSION_INDEX = 'UX_RepairRequests_Submission';
+
 /** Returns Map(slug -> id) of the preferences a customer can currently choose from. */
 async function getActivePreferences() {
   const pool = await getPool();
@@ -26,10 +29,14 @@ async function listActivePreferences() {
  * Existing customers and cars are never updated from anonymous input. Ownership is only recorded when the car has no
  * current owner; a car owned by someone else keeps its owner (changing owners needs a verified flow).
  *
- * Each damage must carry a pre-generated `id`, `images: [{ blobPath, contentType, sizeBytes }]`
+ * Submissions are idempotent: when `submissionId` was already stored (a retry), nothing is written and the existing
+ * requests are returned with `duplicate: true`.
+ *
+ * Each damage must carry a pre-generated `id`, `damageType`, `images: [{ blobPath, contentType, sizeBytes }]`
  * and `preferenceIds: number[]`.
+ * Returns { requests, duplicate }.
  */
-async function createRepairRequests({ customer, car, damages }) {
+async function createRepairRequests({ submissionId, postalCode, customer, car, damages }) {
   const pool = await getPool();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -68,14 +75,15 @@ async function createRepairRequests({ customer, car, damages }) {
           INSERT INTO dbo.CarOwnerships (CarId, CustomerId) VALUES (@carId, @customerId)`);
 
     const requests = [];
-    for (const damage of damages) {
+    for (const [damageIndex, damage] of damages.entries()) {
       await new sql.Request(tx)
         .input('id', sql.UniqueIdentifier, damage.id)
         .input('carId', sql.UniqueIdentifier, carId)
         .input('description', sql.NVarChar(2000), damage.description)
+        .input('damageType', sql.VarChar(30), damage.damageType)
         .input('location', sql.VarChar(30), damage.location)
-        .query(`INSERT INTO dbo.DamageReports (Id, CarId, Description, DamageLocation)
-                VALUES (@id, @carId, @description, @location)`);
+        .query(`INSERT INTO dbo.DamageReports (Id, CarId, Description, DamageType, DamageLocation)
+                VALUES (@id, @carId, @description, @damageType, @location)`);
 
       for (const [index, image] of damage.images.entries()) {
         await new sql.Request(tx)
@@ -91,9 +99,17 @@ async function createRepairRequests({ customer, car, damages }) {
       const result = await new sql.Request(tx)
         .input('damageReportId', sql.UniqueIdentifier, damage.id)
         .input('customerId', sql.UniqueIdentifier, customerId)
-        .query(`INSERT INTO dbo.RepairRequests (DamageReportId, CustomerId)
+        .input('postalCode', sql.Char(6), postalCode)
+        .input('contactFirstName', sql.NVarChar(100), customer.firstName)
+        .input('contactLastName', sql.NVarChar(100), customer.lastName)
+        .input('contactPhone', sql.NVarChar(30), customer.phone)
+        .input('submissionId', sql.UniqueIdentifier, submissionId)
+        .input('submissionIndex', sql.TinyInt, damageIndex)
+        .query(`INSERT INTO dbo.RepairRequests (DamageReportId, CustomerId, PostalCode, ContactFirstName, ContactLastName,
+                  ContactPhone, SubmissionId, SubmissionIndex)
                 OUTPUT inserted.Id, inserted.Status, inserted.CreatedAt
-                VALUES (@damageReportId, @customerId)`);
+                VALUES (@damageReportId, @customerId, @postalCode, @contactFirstName, @contactLastName,
+                  @contactPhone, @submissionId, @submissionIndex)`);
       const row = result.recordset[0];
 
       for (const preferenceId of damage.preferenceIds) {
@@ -106,11 +122,24 @@ async function createRepairRequests({ customer, car, damages }) {
     }
 
     await tx.commit();
-    return requests;
+    return { requests, duplicate: false };
   } catch (err) {
     await tx.rollback().catch(() => {});
+    if (DUPLICATE_KEY_ERRORS.includes(err.number) && err.message.includes(SUBMISSION_INDEX)) {
+      return { requests: await findBySubmission(submissionId), duplicate: true };
+    }
     throw err;
   }
+}
+
+async function findBySubmission(submissionId) {
+  const pool = await getPool();
+  const result = await pool.request().input('submissionId', sql.UniqueIdentifier, submissionId).query(`
+    SELECT Id, DamageReportId, Status, CreatedAt FROM dbo.RepairRequests
+    WHERE SubmissionId = @submissionId ORDER BY SubmissionIndex`);
+  return result.recordset.map((r) => ({
+    id: r.Id, damageReportId: r.DamageReportId, status: r.Status, createdAt: r.CreatedAt.toISOString(),
+  }));
 }
 
 async function findOrCreate(tx, selectSql, bindSelect, insertSql, bindInsert) {

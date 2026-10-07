@@ -57,11 +57,14 @@ Images go straight from the browser to Blob Storage (container `damage-images`, 
 
 ```json
 {
+  "submissionId": "<guid, generated once per form>",
+  "postalCode": "3511 AB",
   "customer": { "firstName": "Piet", "lastName": "Pietersen", "email": "piet@example.nl", "phone": "06 12345678" },
   "car": { "licensePlate": "AB-123-C", "make": "Volkswagen", "model": "Golf", "buildYear": 2018 },
   "damages": [
     {
       "description": "Deuk in het linker voorportier",
+      "damageType": "carrosserie",
       "location": "left",
       "images": ["pending/<guid>.jpg"],
       "preferences": ["rental-car", "fast-repair"]
@@ -70,7 +73,7 @@ Images go straight from the browser to Blob Storage (container `damage-images`, 
 }
 ```
 
-Each damage becomes one damage report plus one repair request (with its own preferences). `location` is optional (`front`, `rear`, `left`, `right`, `roof`, `windscreen`, `wheels`, `interior`, `other`), `preferences` are slugs from `CustomerRepairPreferences` (add or deactivate rows there to change the list), 1-10 images per damage, max 10 damages. Responds `201 { repairRequests: [{ id, damageReportId, status, createdAt }] }`, or `422` with `details` per field (including unknown preference slugs and images that were not uploaded).
+Each damage becomes one damage report plus one repair request (with its own preferences). `damageType` is required (`lakschade`, `carrosserie`, `ruitschade`, `bumper`, `ev`, `overig`) and so is `postalCode`, the place of the repair; garages only see its first four digits. `submissionId` makes the call idempotent: sending the same id again (a retry after a lost response) returns the original requests with `200` instead of creating duplicates. `location` is optional (`front`, `rear`, `left`, `right`, `roof`, `windscreen`, `wheels`, `interior`, `other`), `preferences` are slugs from `CustomerRepairPreferences` (add or deactivate rows there to change the list), 1-10 images per damage, max 10 damages. Responds `201 { repairRequests: [{ id, damageReportId, status, createdAt }] }`, or `422` with `details` per field (including unknown preference slugs and images that were not uploaded).
 
 `GET /api/repair-preferences` returns the selectable preferences as `{ preferences: [{ slug, name }] }` (active rows only, in `SortOrder`) so the UI does not hardcode them.
 

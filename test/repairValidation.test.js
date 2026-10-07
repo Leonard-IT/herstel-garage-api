@@ -7,10 +7,13 @@ const { validateRepairRequest, validateUploadUrlRequest } = require('../src/lib/
 const path = (n = 1, ext = 'jpg') => `pending/00000000-0000-4000-8000-00000000000${n}.${ext}`;
 
 const valid = () => ({
+  submissionId: '3f1b2c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
+  postalCode: '3511 ab',
   customer: { firstName: 'Piet', lastName: 'Pietersen', email: 'Piet@Example.nl', phone: '06 12345678' },
   car: { licensePlate: 'ab-123-c', make: 'Volkswagen', model: 'Golf', buildYear: 2018 },
   damages: [{
     description: 'Deuk in het linker voorportier',
+    damageType: 'carrosserie',
     location: 'left',
     images: [path(1), path(2, 'png')],
     preferences: ['rental-car', 'rental-car', 'fast-repair'],
@@ -22,12 +25,13 @@ test('accepts and normalizes a valid payload', () => {
   assert.strictEqual(errors, undefined);
   assert.strictEqual(value.customer.email, 'piet@example.nl');
   assert.strictEqual(value.car.licensePlate, 'AB123C');
+  assert.strictEqual(value.postalCode, '3511AB');
   assert.deepStrictEqual(value.damages[0].preferences, ['rental-car', 'fast-repair']);
 });
 
 test('rejects an empty payload with all required fields', () => {
   const { errors } = validateRepairRequest({});
-  for (const f of ['customer.firstName', 'customer.lastName', 'customer.email', 'customer.phone', 'car.licensePlate', 'car.make', 'car.model', 'damages']) {
+  for (const f of ['customer.firstName', 'customer.lastName', 'customer.email', 'customer.phone', 'car.licensePlate', 'car.make', 'car.model', 'postalCode', 'submissionId', 'damages']) {
     assert.ok(errors[f], `expected error for ${f}`);
   }
 });
@@ -67,4 +71,19 @@ test('upload url request only allows image content types', () => {
   assert.deepStrictEqual(validateUploadUrlRequest({ files: [{ contentType: 'image/JPEG' }] }).value.files, [{ contentType: 'image/jpeg', extension: 'jpg' }]);
   assert.ok(validateUploadUrlRequest({ files: [{ contentType: 'application/pdf' }] }).errors['files[0].contentType']);
   assert.ok(validateUploadUrlRequest({ files: [] }).errors.files);
+});
+
+test('requires a damage type from the known list', () => {
+  const body = valid();
+  body.damages[0].damageType = 'sparkle';
+  assert.ok(validateRepairRequest(body).errors['damages[0].damageType']);
+  delete body.damages[0].damageType;
+  assert.ok(validateRepairRequest(body).errors['damages[0].damageType']);
+});
+
+test('requires a valid postal code and a submission id', () => {
+  for (const postalCode of ['', '0123 AB', '1234', '1234 A']) {
+    assert.ok(validateRepairRequest({ ...valid(), postalCode }).errors.postalCode, postalCode);
+  }
+  assert.ok(validateRepairRequest({ ...valid(), submissionId: 'not-a-guid' }).errors.submissionId);
 });
