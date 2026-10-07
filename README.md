@@ -78,6 +78,25 @@ The customer is reused by email and the car by license plate; stored details are
 
 Storage setup in Azure: a lifecycle rule that deletes blobs with prefix `damage-images/pending/` after 1 day (abandoned uploads), CORS allowing `PUT` from the website origin, and for the Function App's managed identity the roles *Storage Blob Data Contributor* and *Storage Blob Delegator*. App setting: `IMAGE_STORAGE_ACCOUNT_NAME` (locally `IMAGE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true`). The container `damage-images` must exist.
 
+### Garage endpoints (login required)
+
+Garages see open repair requests and judge for themselves whether to take a job.
+
+- `GET /api/garage/repair-requests` lists the newest open requests: `{ repairRequests: [{ id, createdAt, car: { make, model, buildYear }, description, location, imageCount, thumbnailUrl, preferences: [{ slug, name }] }] }`.
+- `GET /api/garage/repair-requests/{id}` returns one request with `images: [{ url }]`; 404 when it does not exist or is no longer open.
+- Image URLs are read-only SAS links valid for 15 minutes; the container stays private. They are only handed out after the caller has been checked.
+- No personal data is exposed: no customer details and no license plate. Contact details are meant to be released only once a garage has taken the job (not built yet).
+- 401 when not signed in, 403 when the user is not linked to a garage with status `approved`.
+
+**Authentication.** The Function App uses App Service Authentication (Easy Auth) with Microsoft Entra External ID: set it to *Allow unauthenticated access* (the registration and submit endpoints are public) and let it validate bearer tokens. It passes the user's object id in `x-ms-client-principal-id`, which `GarageUsers.ExternalId` maps to a garage (see migration 003; link users with an INSERT for now). Setup in short:
+
+1. Create an External ID tenant, a user flow and two app registrations: one for the API (expose a scope such as `access_as_user`) and one single-page app for the dashboard (redirect URIs of the garage site, permission to the API scope).
+2. Function App → *Authentication* → add the Microsoft provider for the API registration, "Allow unauthenticated access".
+3. Fill in `auth-config.js` in herstel-garage-web (client id, authority, API scope).
+4. Allow the garage site's origin in the Function App's CORS settings.
+
+Locally set `ALLOW_DEV_AUTH=true` (already in local.settings) and send `x-dev-user-id: <ExternalId of a GarageUsers row>`; the dashboard asks for it on localhost. This is refused whenever `WEBSITE_SITE_NAME` is set, so it cannot be active in Azure.
+
 ## Local development
 
 Requires Node 20+, Docker, [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local) and [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) (the Functions host itself needs a storage account).

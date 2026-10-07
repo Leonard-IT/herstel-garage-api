@@ -1,0 +1,33 @@
+'use strict';
+
+const { app } = require('@azure/functions');
+const { requireGarage } = require('../lib/garageAuth');
+const { listOpenRequests } = require('../lib/garageRequestRepository');
+const { createReadUrls } = require('../lib/blobStorage');
+
+app.http('listGarageRepairRequests', {
+  methods: ['GET'],
+  authLevel: 'anonymous', // the caller is authenticated by App Service Authentication and checked in requireGarage
+  route: 'garage/repair-requests',
+  handler: async (request, context) => {
+    try {
+      const { response } = await requireGarage(request);
+      if (response) return response;
+
+      const requests = await listOpenRequests();
+      const urls = await createReadUrls(requests.map((r) => r.thumbnailPath).filter(Boolean));
+      return {
+        status: 200,
+        jsonBody: {
+          repairRequests: requests.map(({ thumbnailPath, damageReportId, ...rest }) => ({
+            ...rest,
+            thumbnailUrl: thumbnailPath ? urls.get(thumbnailPath) : null,
+          })),
+        },
+      };
+    } catch (err) {
+      context.error('Listing repair requests failed.', err);
+      return { status: 500, jsonBody: { error: 'internal_error', message: 'Could not load requests, please try again later' } };
+    }
+  },
+});

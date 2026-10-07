@@ -7,6 +7,7 @@ const { MAX_IMAGE_BYTES, IMAGE_TYPES } = require('./repairValidation');
 
 const CONTAINER = 'damage-images';
 const UPLOAD_URL_TTL_MINUTES = 10;
+const READ_URL_TTL_MINUTES = 15;
 
 let service;
 function getService() {
@@ -29,38 +30,56 @@ function getService() {
 const container = () => getService().getContainerClient(CONTAINER);
 
 /**
+ * Returns a function that signs a short-lived SAS URL for one blob path.
+ * Shared key credentials (Azurite / connection string) sign locally; a managed identity needs a user delegation key.
+ */
+async function createSasSigner(permissionFlags, ttlMinutes) {
+  const startsOn = new Date(Date.now() - 60 * 1000);
+  const expiresOn = new Date(Date.now() + ttlMinutes * 60 * 1000);
+  const permissions = BlobSASPermissions.parse(permissionFlags);
+  const delegationKey = process.env.IMAGE_STORAGE_CONNECTION_STRING
+    ? undefined
+    : await getService().getUserDelegationKey(startsOn, expiresOn);
+
+  const sign = async (blobPath) => {
+    const blob = container().getBlockBlobClient(blobPath);
+    if (!delegationKey) return blob.generateSasUrl({ permissions, startsOn, expiresOn });
+    const sas = generateBlobSASQueryParameters(
+      { containerName: CONTAINER, blobName: blobPath, permissions, startsOn, expiresOn },
+      delegationKey,
+      getService().accountName,
+    );
+    return `${blob.url}?${sas}`;
+  };
+  return { sign, expiresAt: expiresOn.toISOString() };
+}
+
+/**
  * Creates short-lived, write-only SAS URLs so the browser can upload images straight to Blob Storage.
  * The blobs land under "pending/" and are moved to their permanent path when the repair request is submitted.
  */
 async function createUploadUrls(files) {
   // Local convenience only: in Azure the container is provisioned with the storage account.
   if (process.env.IMAGE_STORAGE_CONNECTION_STRING) await container().createIfNotExists();
-  const startsOn = new Date(Date.now() - 60 * 1000);
-  const expiresOn = new Date(Date.now() + UPLOAD_URL_TTL_MINUTES * 60 * 1000);
-  const permissions = BlobSASPermissions.parse('cw');
-  // Shared key credentials (Azurite / connection string) sign locally; managed identity needs a user delegation key.
-  const delegationKey = process.env.IMAGE_STORAGE_CONNECTION_STRING
-    ? undefined
-    : await getService().getUserDelegationKey(startsOn, expiresOn);
+  const { sign, expiresAt } = await createSasSigner('cw', UPLOAD_URL_TTL_MINUTES);
 
   return Promise.all(files.map(async ({ contentType, extension }) => {
     const blobPath = `pending/${randomUUID()}.${extension}`;
-    const blob = container().getBlockBlobClient(blobPath);
-    const uploadUrl = delegationKey
-      ? `${blob.url}?${generateBlobSASQueryParameters(
-        { containerName: CONTAINER, blobName: blobPath, permissions, startsOn, expiresOn },
-        delegationKey,
-        getService().accountName,
-      )}`
-      : await blob.generateSasUrl({ permissions, startsOn, expiresOn });
     return {
       blobPath,
-      uploadUrl,
-      expiresAt: expiresOn.toISOString(),
+      uploadUrl: await sign(blobPath),
+      expiresAt,
       // The browser must PUT the file with these headers.
       headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': contentType },
     };
   }));
+}
+
+/** Creates short-lived, read-only SAS URLs. Returns Map(blobPath -> url). Callers must check access first. */
+async function createReadUrls(blobPaths) {
+  if (!blobPaths.length) return new Map();
+  const { sign } = await createSasSigner('r', READ_URL_TTL_MINUTES);
+  return new Map(await Promise.all(blobPaths.map(async (path) => [path, await sign(path)])));
 }
 
 /**
@@ -96,4 +115,4 @@ async function discard(paths) {
   await Promise.all(paths.map((path) => container().getBlobClient(path).deleteIfExists().catch(() => {})));
 }
 
-module.exports = { createUploadUrls, inspectUploads, copyBlob, discard };
+module.exports = { createUploadUrls, createReadUrls, inspectUploads, copyBlob, discard };
