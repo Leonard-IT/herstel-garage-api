@@ -23,9 +23,15 @@ function getCallerId(headers, env = process.env) {
  * Resolves the request to an approved garage.
  * Returns { garageId } or { response } with the 401/403 to send back.
  */
-async function requireGarage(request) {
+async function requireGarage(request, context) {
   const callerId = getCallerId(request.headers);
-  if (!callerId) return { response: unauthorized };
+  if (!callerId) {
+    // Diagnostic for misconfigured authentication: header names only, never values or the token itself.
+    const names = [...request.headers.keys()].filter((name) => name.startsWith('x-ms-client-principal') || name.startsWith('x-ms-token'));
+    context?.warn(`Request refused (401): Authorization header ${request.headers.has('authorization') ? 'present' : 'missing'}, `
+      + `App Service authentication headers: ${names.length ? names.join(', ') : 'none'}`);
+    return { response: unauthorized };
+  }
 
   const pool = await getPool();
   const result = await pool.request()

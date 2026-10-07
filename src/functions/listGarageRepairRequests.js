@@ -11,7 +11,7 @@ app.http('listGarageRepairRequests', {
   route: 'garage/repair-requests',
   handler: async (request, context) => {
     try {
-      const { response } = await requireGarage(request);
+      const { response } = await requireGarage(request, context);
       if (response) return response;
 
       const requests = await listOpenRequests();

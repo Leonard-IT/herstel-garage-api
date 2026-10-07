@@ -13,7 +13,7 @@ app.http('getGarageRepairRequest', {
   route: 'garage/repair-requests/{id}',
   handler: async (request, context) => {
     try {
-      const { response } = await requireGarage(request);
+      const { response } = await requireGarage(request, context);
       if (response) return response;
 
       const notFound = { status: 404, jsonBody: { error: 'not_found', message: 'Repair request not found' } };
