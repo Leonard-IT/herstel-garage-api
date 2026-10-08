@@ -72,7 +72,7 @@ async function loadPreferences(pool, whereClause, bind) {
 
 /**
  * Newest requests that still need a garage, as seen by this garage: stored status 'open', shown as 'in_option' while an offer is
- * active. Each comes with the paths of its first two images (card photos) and its image count.
+ * active. Each comes with the path of its first image (the card photo) and its image count.
  */
 async function listOpenRequests(garageId) {
   const pool = await getPool();
@@ -83,8 +83,6 @@ async function listOpenRequests(garageId) {
     .query(`
     SELECT TOP (@limit) ${REQUEST_COLUMNS},
       (SELECT TOP 1 i.BlobPath FROM dbo.DamageReportImages i WHERE i.DamageReportId = dr.Id ORDER BY i.SortOrder) AS ThumbnailPath,
-      (SELECT i.BlobPath FROM dbo.DamageReportImages i WHERE i.DamageReportId = dr.Id
-        ORDER BY i.SortOrder OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY) AS SecondThumbnailPath,
       (SELECT COUNT(*) FROM dbo.DamageReportImages i WHERE i.DamageReportId = dr.Id) AS ImageCount
     ${REQUEST_JOINS}
     WHERE rr.Status = 'open'
@@ -92,7 +90,7 @@ async function listOpenRequests(garageId) {
   const preferences = await loadPreferences(pool, "rr.Status = 'open'", (r) => r);
   return result.recordset.map((row) => ({
     ...toRequest(row),
-    thumbnailPaths: [row.ThumbnailPath, row.SecondThumbnailPath].filter(Boolean),
+    thumbnailPath: row.ThumbnailPath,
     imageCount: row.ImageCount,
     preferences: preferences.get(row.Id) ?? [],
   }));

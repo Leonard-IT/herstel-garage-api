@@ -15,15 +15,14 @@ app.http('listGarageRepairRequests', {
       if (response) return response;
 
       const requests = await listOpenRequests(garageId);
-      const urls = await createReadUrls(requests.flatMap((r) => r.thumbnailPaths));
+      const urls = await createReadUrls(requests.map((r) => r.thumbnailPath).filter(Boolean));
       return {
         status: 200,
         jsonBody: {
-          repairRequests: requests.map(({ thumbnailPaths, damageReportId, ...rest }) => {
-            const thumbnailUrls = thumbnailPaths.map((path) => urls.get(path));
-            // thumbnailUrl (first photo) is kept for older clients; thumbnailUrls holds up to two photos for the card.
-            return { ...rest, thumbnailUrl: thumbnailUrls[0] ?? null, thumbnailUrls };
-          }),
+          repairRequests: requests.map(({ thumbnailPath, damageReportId, ...rest }) => ({
+            ...rest,
+            thumbnailUrl: thumbnailPath ? urls.get(thumbnailPath) : null,
+          })),
         },
       };
     } catch (err) {

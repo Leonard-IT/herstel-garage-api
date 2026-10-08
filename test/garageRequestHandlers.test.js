@@ -76,9 +76,9 @@ test('the list is asked for the garage of the caller', async () => {
 
 test('the list shows each request with its status and, for the own garage only, the own offer', async () => {
   stubs.list = async () => [
-    { ...base({ id: 'a' }), thumbnailPaths: ['a/1.jpg', 'a/2.jpg'], imageCount: 2 },
-    { ...base({ id: 'b', status: 'in_option', myOffer }), thumbnailPaths: ['b/1.jpg'], imageCount: 1 },
-    { ...base({ id: 'c', status: 'in_option', myOffer: null }), thumbnailPaths: [], imageCount: 0 },
+    { ...base({ id: 'a' }), thumbnailPath: 'a/1.jpg', imageCount: 2 },
+    { ...base({ id: 'b', status: 'in_option', myOffer }), thumbnailPath: 'b/1.jpg', imageCount: 1 },
+    { ...base({ id: 'c', status: 'in_option', myOffer: null }), thumbnailPath: null, imageCount: 0 },
   ];
 
   const { jsonBody } = await callList();
@@ -88,17 +88,18 @@ test('the list shows each request with its status and, for the own garage only, 
   assert.strictEqual(a.myOffer, null);
   assert.deepStrictEqual(b.myOffer, myOffer);
   assert.strictEqual(c.myOffer, null); // in option with another garage: only the status is visible
-  assert.deepStrictEqual(a.thumbnailUrls, ['https://storage.test/a/1.jpg?sig=x', 'https://storage.test/a/2.jpg?sig=x']);
-  assert.strictEqual(c.thumbnailUrl, null);
+  assert.strictEqual(a.thumbnailUrl, 'https://storage.test/a/1.jpg?sig=x');
+  assert.strictEqual(a.imageCount, 2);
+  assert.strictEqual(c.thumbnailUrl, null); // no photo
 });
 
 test('the list does not expose internal fields', async () => {
-  stubs.list = async () => [{ ...base(), thumbnailPaths: ['a/1.jpg'], imageCount: 1 }];
+  stubs.list = async () => [{ ...base(), thumbnailPath: 'a/1.jpg', imageCount: 1 }];
 
   const { jsonBody } = await callList();
 
   assert.strictEqual('damageReportId' in jsonBody.repairRequests[0], false);
-  assert.strictEqual('thumbnailPaths' in jsonBody.repairRequests[0], false);
+  assert.strictEqual('thumbnailPath' in jsonBody.repairRequests[0], false);
 });
 
 test('the detail is asked for the request and the garage of the caller, and shows status and own offer', async () => {
