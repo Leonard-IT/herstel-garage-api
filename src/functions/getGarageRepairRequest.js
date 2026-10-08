@@ -13,13 +13,13 @@ app.http('getGarageRepairRequest', {
   route: 'garage/repair-requests/{id}',
   handler: async (request, context) => {
     try {
-      const { response } = await requireGarage(request, context);
+      const { response, garageId } = await requireGarage(request, context);
       if (response) return response;
 
       const notFound = { status: 404, jsonBody: { error: 'not_found', message: 'Repair request not found' } };
       const { id } = request.params;
       if (!GUID.test(id)) return notFound;
-      const found = await getOpenRequest(id);
+      const found = await getOpenRequest(id, garageId);
       if (!found) return notFound;
 
       const urls = await createReadUrls(found.imagePaths);

@@ -85,11 +85,32 @@ Storage setup in Azure: a lifecycle rule that deletes blobs with prefix `damage-
 
 Garages see open repair requests and judge for themselves whether to take a job.
 
-- `GET /api/garage/repair-requests` lists the newest open requests: `{ repairRequests: [{ id, createdAt, car: { make, model, buildYear }, description, damageType, location, postalArea, imageCount, thumbnailUrl, thumbnailUrls, preferences: [{ slug, name }] }] }`. `thumbnailUrls` holds the first two photos (for the card), `thumbnailUrl` the first one.
-- `GET /api/garage/repair-requests/{id}` returns one request with `images: [{ url }]`; 404 when it does not exist or is no longer open.
+- `GET /api/garage/repair-requests` lists the newest requests that still need a garage: `{ repairRequests: [{ id, createdAt, car: { make, model, buildYear }, description, damageType, location, postalArea, status, myOffer, imageCount, thumbnailUrl, thumbnailUrls, preferences: [{ slug, name }] }] }`. `thumbnailUrls` holds the first two photos (for the card), `thumbnailUrl` the first one.
+- `GET /api/garage/repair-requests/{id}` returns one request (same fields, without the thumbnails) with `images: [{ url }]`; 404 when it does not exist or is no longer open.
+- **Status.** Every request has a `status`. Stored in `RepairRequests.Status`: `open` (new; UI "Nieuw"), `accepted` (the customer accepted an offer; "Geaccepteerd"), `in_progress`, `completed`, `cancelled`. On top of that the API reports **`in_option`** ("In optie"): an `open` request that has an active offer whose deadline has not passed (`Offers.Status = 'active'` and `ExpiresAt` in the future). It is worked out on every read and never stored, so it ends by itself when the offer expires.
+- **`myOffer`** is the calling garage's own running offer (`{ id, availableFrom, validityHours, expiresAt, createdAt }`), or `null`. Offers of other garages are never visible: for them a request is just `in_option`, without who, what or until when. A request that is `in_option` is reserved: other garages get a 409 when they try to make an offer.
 - Image URLs are read-only SAS links valid for 15 minutes; the container stays private. They are only handed out after the caller has been checked.
 - No personal data is exposed: no customer details and no license plate. Contact details are meant to be released only once a garage has taken the job (not built yet).
 - 401 when not signed in, 403 when the user is not linked to a garage with status `approved`.
+
+- `POST /api/garage/repair-requests/{id}/offers` makes an offer on an open request:
+
+  ```json
+  { "availableFrom": "2026-10-12", "validityHours": 24 }
+  ```
+
+  `availableFrom` is the first day the garage can do the repair (yyyy-mm-dd, today in Dutch time up to 365 days ahead); `validityHours` is
+  12, 24 or 48. The garage and the user come from the login, never from the body. The expiry time is computed on the server from the moment
+  the offer is made. There is no price yet (the price model is still open, see `SUGGESTIONS.md`).
+
+  | Status | Meaning |
+  | --- | --- |
+  | 201 | Created: `{ id, repairRequestId, availableFrom, validityHours, expiresAt, status: "active", createdAt }` |
+  | 400 | Body is not valid JSON |
+  | 401 / 403 | Not signed in / not linked to an approved garage |
+  | 404 | The request does not exist or is no longer open (the same answer for both) |
+  | 409 | `already_offered`: this garage already has an active offer on this request. `in_option`: another garage has an active offer, so the request is reserved for it until its deadline. An offer that has expired never blocks anyone |
+  | 422 | Validation failed: `{ error, message, details: { field: message } }` |
 
 **Authentication.** The Function App uses App Service Authentication (Easy Auth) with Microsoft Entra External ID: set it to *Allow unauthenticated access* (the registration and submit endpoints are public) and let it validate bearer tokens. It passes the user's object id in `x-ms-client-principal-id`, which `GarageUsers.ExternalId` maps to a garage (see migration 003; link users with an INSERT for now). Setup in short:
 

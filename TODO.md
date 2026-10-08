@@ -73,8 +73,44 @@ Still to do, so garages can be matched and judge distance:
 
 ## Taking a job
 
-Making an offer and releasing the customer's contact details to the garage are not built. Garages currently only see
-the damage, photos and preferences (no personal data, no license plate).
+The dashboard has the offer screens (herstel-garage-web, `src/features/offers`: pick a start date, choose how long the offer is valid,
+review everything, confirm) and send the offer to `POST /api/garage/repair-requests/{id}/offers`. While an offer runs, the request is
+"in option" (status `in_option`, worked out from the offers; see the README). Ideas for the content of an offer are in `SUGGESTIONS.md`.
+
+- [ ] **Decide the price model first**: price clock from PROJECT.md (the garage accepts the current price) or the garage enters a price.
+      See `SUGGESTIONS.md`; it decides the screens and the table.
+- [x] `Offers` table (migration 005) and `POST /api/garage/repair-requests/{id}/offers` with `availableFrom` and `validityHours`
+      (12, 24 or 48), validated on the server. Tested with stubs (`test/createGarageOffer.test.js`); **the SQL has not been run against
+      a database yet**: apply migration 005 and try the endpoint once (locally or after the pipeline runs).
+- [x] Status "in option" (migration 006 adds the stored status `accepted`; `in_option` is worked out from the offers). The list and detail
+      endpoints return `status` and the garage's own `myOffer`; the dashboard shows the "In optie" label on the card and the detail page.
+      **Decision to confirm:** while a request is in option, other garages cannot make an offer (409 `in_option`), as PROJECT.md describes
+      (exclusivity window). To allow parallel offers, remove the check in `src/lib/offerRepository.js` and adjust the label.
+- [ ] Apply migrations 005 and 006 and try the flow once against a real database (the SQL has only been reviewed, not run).
+- [ ] Decide who may accept an offer and what happens then (`RepairRequests.Status = 'accepted'`, the other offers, the customer's contact
+      details for the garage). Nothing sets `accepted` yet.
+- [ ] Count in-option requests separately in the dashboard (the "Openstaande aanvragen" badge now includes them) and let a garage see
+      the end of its own option on the card ("nog 5 uur").
+- [ ] List a garage's offers (`GET /api/garage/offers`), and withdraw an offer (`status = withdrawn`) with the rules from `SUGGESTIONS.md`.
+- [ ] Sweep or ignore expired offers: today an offer is only marked `expired` when the same garage makes a new one. Anything that reads
+      offers must also check `ExpiresAt`.
+- [ ] Rules still open: what happens to the request and the other offers when an offer is accepted (status, who can accept).
+      Already enforced: only open requests, one active offer per garage and request, expiry time set on the server.
+- [x] Dashboard connected to the offers endpoint (`src/api/offers.ts`).
+- [ ] Extra offer fields from `SUGGESTIONS.md` (duration, pickup and delivery, rental car, warranty, parts type, note, insurance handling),
+      once the price model is decided.
+- [ ] Release the customer's contact details to the garage once its offer is accepted. Until then garages only see the damage, photos and
+      preferences (no personal data, no license plate).
+- [ ] Serve the data the overview cards currently fake with example values: view count, insured amount, status and mileage
+      (`exampleCardData.ts` in the dashboard).
+
+## Dashboard follow-ups
+
+- [ ] The sidebar menu wraps onto three lines on a phone; make it a compact, scrollable menu.
+- [ ] Show the garage's own name (and not only the user's) in the topbar or sidebar. The API has to return the garage with the user.
+- [ ] Enforce the Content-Security-Policy: it runs as `Content-Security-Policy-Report-Only` in `staticwebapp.config.json`. Check the
+      browser console on production for violations, then rename the header.
+- [ ] The Actieve reparaties, Historie, Facturatie and Instellingen pages still show mock data.
 
 ## Mock fields removed from the dashboard
 

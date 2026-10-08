@@ -11,10 +11,10 @@ app.http('listGarageRepairRequests', {
   route: 'garage/repair-requests',
   handler: async (request, context) => {
     try {
-      const { response } = await requireGarage(request, context);
+      const { response, garageId } = await requireGarage(request, context);
       if (response) return response;
 
-      const requests = await listOpenRequests();
+      const requests = await listOpenRequests(garageId);
       const urls = await createReadUrls(requests.flatMap((r) => r.thumbnailPaths));
       return {
         status: 200,

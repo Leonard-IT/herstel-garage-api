@@ -41,7 +41,7 @@ const mask = (id) => (id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : i
 
 /**
  * Resolves the request to an approved garage.
- * Returns { garageId } or { response } with the 401/403 to send back.
+ * Returns { garageId, userId } (userId is the GarageUsers row of the caller) or { response } with the 401/403 to send back.
  */
 async function requireGarage(request, context) {
   const callerId = getCallerId(request.headers);
@@ -56,7 +56,7 @@ async function requireGarage(request, context) {
   const pool = await getPool();
   const result = await pool.request()
     .input('externalId', sql.VarChar(100), callerId)
-    .query(`SELECT g.Id, g.Status FROM dbo.GarageUsers u JOIN dbo.Garages g ON g.Id = u.GarageId
+    .query(`SELECT g.Id, g.Status, u.Id AS UserId FROM dbo.GarageUsers u JOIN dbo.Garages g ON g.Id = u.GarageId
             WHERE u.ExternalId = @externalId`);
   const garage = result.recordset[0];
   if (!garage || garage.Status !== 'approved') {
@@ -65,7 +65,7 @@ async function requireGarage(request, context) {
       : `Request refused (403): no GarageUsers row with ExternalId ${mask(callerId)}`);
     return { response: forbidden };
   }
-  return { garageId: garage.Id };
+  return { garageId: garage.Id, userId: garage.UserId };
 }
 
 module.exports = { getCallerId, requireGarage, devAuthAllowed };
