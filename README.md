@@ -85,7 +85,7 @@ Storage setup in Azure: a lifecycle rule that deletes blobs with prefix `damage-
 
 Garages see open repair requests and judge for themselves whether to take a job.
 
-- `GET /api/garage/repair-requests` lists the newest open requests: `{ repairRequests: [{ id, createdAt, car: { make, model, buildYear }, description, location, imageCount, thumbnailUrl, preferences: [{ slug, name }] }] }`.
+- `GET /api/garage/repair-requests` lists the newest open requests: `{ repairRequests: [{ id, createdAt, car: { make, model, buildYear }, description, damageType, location, postalArea, imageCount, thumbnailUrl, thumbnailUrls, preferences: [{ slug, name }] }] }`. `thumbnailUrls` holds the first two photos (for the card), `thumbnailUrl` the first one.
 - `GET /api/garage/repair-requests/{id}` returns one request with `images: [{ url }]`; 404 when it does not exist or is no longer open.
 - Image URLs are read-only SAS links valid for 15 minutes; the container stays private. They are only handed out after the caller has been checked.
 - No personal data is exposed: no customer details and no license plate. Contact details are meant to be released only once a garage has taken the job (not built yet).
