@@ -112,6 +112,37 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
       browser console on production for violations, then rename the header.
 - [ ] The Actieve reparaties, Historie, Facturatie and Instellingen pages still show mock data.
 
+## Share a public link to a repair request
+
+Built (migration 007, `/api/admin/...`, `/api/s/...`; see the README): a link per repair request **and per garage** that exists in the
+platform, a public page with a WhatsApp-style preview (title, short description, photo), open tracking (when, how often, previews counted
+separately), stats, and an administrator page "Links delen" in the garage dashboard (to be moved to the admin site). Tested with stubs and
+in a browser against a mock API; **the SQL has not been run against a database yet**.
+
+Before it works in production:
+
+- [ ] Apply migration 007 (the pipeline does that on the next push to main).
+- [ ] Set `ADMIN_USER_IDS` on the Function App to the object id(s) of the people who may use the page. Empty means nobody.
+- [ ] Try it for real: make a link, paste it into WhatsApp and check the preview (title, description, photo), open it on a phone and
+      check that the page shows as opened. This cannot be tested without WhatsApp itself.
+- [ ] The Function App must answer the public page quickly, or WhatsApp skips the preview: a cold start on a consumption plan can take
+      several seconds. Consider an always-ready instance, or open the link once before sending. WhatsApp also remembers a failed preview
+      for a while; make a new link when a test failed.
+- [ ] Preview photos: WhatsApp shows the image reliably when it is small (roughly under 300 KB). Photos are resized in the browser to
+      1600 px wide, which is often larger. A dedicated preview image (1200×630, made on the server) would be more reliable; see SUGGESTIONS.md.
+- [ ] Optional: a short, own domain for the links (`SHARE_BASE_URL`), instead of the long azurewebsites.net address.
+- [ ] Rate limiting on the public endpoints (tokens are 256-bit random, so guessing is not realistic, but crawlers and abuse are).
+
+Decisions made, change them if needed:
+
+- Who creates links: platform administrators only (the `ADMIN_USER_IDS` list), not garages.
+- What is public: car, kind of damage, location, postal area and photos. **Not** the customer's free-text description (it can contain names
+  or phone numbers), the license plate, contact details, or anything about offers. Photos can still show a license plate or people.
+- One link per request and garage; making it again returns the running one. Default lifetime 7 days (3, 7, 14 or 30 in the page).
+- Tokens are stored in the database as they are, so a link can be copied again later; a token only gives a limited view of one request.
+
+Later: see the "Links delen" section of `SUGGESTIONS.md`.
+
 ## Mock fields removed from the dashboard
 
 Removed from the Openstaande aanvragen mockup, because we don't collect them: taxatie, insurer, kilometerstand and fee rows,

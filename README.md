@@ -121,6 +121,42 @@ Garages see open repair requests and judge for themselves whether to take a job.
 
 Locally set `ALLOW_DEV_AUTH=true` (already in local.settings) and send `x-dev-user-id: <ExternalId of a GarageUsers row>`; the dashboard asks for it on localhost. This is refused whenever `WEBSITE_SITE_NAME` is set, so it cannot be active in Azure.
 
+### Sharing a repair request with garages (links)
+
+The platform team makes a link to one repair request for one garage that exists in the platform, and shares it (for example in
+WhatsApp). The link opens a public page, without login, with a few details and the photos, and a button to the dashboard to make an offer.
+Table: `RepairRequestShareLinks` (migration 007).
+
+**Administrator endpoints** (login required, and the login must be on the `ADMIN_USER_IDS` list; see settings below):
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/admin/me` | `{ isAdmin }` for any signed-in user (the dashboard uses it to show the menu item) |
+| `GET /api/admin/repair-requests` | The open requests a link can be made for (same shape as the garage list) |
+| `GET /api/admin/garages` | The approved garages a link can be made for: `{ garages: [{ id, companyName, city }] }` |
+| `POST /api/admin/share-links` | `{ repairRequestId, garageIds: [...], expiresInDays? }` (1 to 90, default 7). Makes one link per garage (at most 50). A garage that already has a running link for this request gets that one back (`existing: true`). 201 `{ links: [{ id, url, repairRequestId, garage, createdAt, expiresAt, existing }] }`; 404 when the request is gone or no longer open; 422 for invalid input or a garage that does not exist or is not approved |
+| `GET /api/admin/share-links` | `{ stats, links }`: the newest 500 links, each with `status` (`active`, `expired`, `revoked`), `firstOpenedAt`, `lastOpenedAt`, `openCount`, `firstPreviewAt`, `previewCount`; and `stats`: `totalLinks`, `openedLinks`, `openRate` (0 to 1, null without links) and `averageSecondsToOpen` (null when none was opened) |
+| `DELETE /api/admin/share-links/{id}` | Revokes a link: it stops working at once. 204, or 404 |
+
+**Public endpoints** (no login):
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/s/{token}` | The page. Server-rendered HTML with Open Graph tags (title, short description, first photo), because chat apps build the link preview from those tags and do not run JavaScript. Shows the car, kind of damage, location, postal area, photos and a button to the dashboard. It does **not** show the customer's own description, a license plate, contact details, or anything about offers |
+| `GET /api/s/{token}/photo/{n}` | Photo number n (1-based), served through the API, so the preview's photo address keeps working for as long as the link does (a storage link would expire after 15 minutes). HEIC photos are left out: browsers and chat apps cannot show them |
+
+An unknown, expired or revoked link, and a request that is no longer open, all give the same plain 404 page, so nothing can be learned from the answer. The page is not indexed (`noindex`), not cached, and passes no Referer.
+
+**What counts as "opened".** A person opening the page counts as an open (first time, last time, how often). Chat apps and other link previewers fetch the page too, to build the preview; those are recognised by their User-Agent (`src/lib/shareToken.js`, `isPreviewBot`) and counted separately as a *preview* (`previewCount`), never as an open, so sharing the link does not inflate the open rate. A preview shows that the link was pasted into a chat. `HEAD` requests and `?nc=1` (added by the "Openen" button on the admin page, so testing a link does not count) are not counted at all. This is best effort: a program that pretends to be a browser counts as a person.
+
+**Settings** (Function App settings; locally in `local.settings.json`):
+
+| Setting | Meaning |
+| --- | --- |
+| `ADMIN_USER_IDS` | Comma-separated Entra object ids of the platform administrators. **Empty means nobody is an administrator**, so set it before using the admin page. Use the same object id as in `GarageUsers.ExternalId` |
+| `SHARE_BASE_URL` | Optional. The address in front of `/s/<token>` in the links, for a short or custom domain. Default: the Function App's own address (`https://<app>.azurewebsites.net/api`) |
+| `DASHBOARD_URL` | Optional. Where the page's button leads. Default `https://garage.snelhersteld.nl` |
+
 ## Local development
 
 Requires Node 20+, Docker, [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local) and [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) (the Functions host itself needs a storage account).

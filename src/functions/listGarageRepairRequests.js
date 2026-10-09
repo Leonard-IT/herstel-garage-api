@@ -3,7 +3,7 @@
 const { app } = require('@azure/functions');
 const { requireGarage } = require('../lib/garageAuth');
 const { listOpenRequests } = require('../lib/garageRequestRepository');
-const { createReadUrls } = require('../lib/blobStorage');
+const { presentRequestList } = require('../lib/requestListView');
 
 app.http('listGarageRepairRequests', {
   methods: ['GET'],
@@ -14,17 +14,7 @@ app.http('listGarageRepairRequests', {
       const { response, garageId } = await requireGarage(request, context);
       if (response) return response;
 
-      const requests = await listOpenRequests(garageId);
-      const urls = await createReadUrls(requests.map((r) => r.thumbnailPath).filter(Boolean));
-      return {
-        status: 200,
-        jsonBody: {
-          repairRequests: requests.map(({ thumbnailPath, damageReportId, ...rest }) => ({
-            ...rest,
-            thumbnailUrl: thumbnailPath ? urls.get(thumbnailPath) : null,
-          })),
-        },
-      };
+      return { status: 200, jsonBody: await presentRequestList(await listOpenRequests(garageId)) };
     } catch (err) {
       context.error('Listing repair requests failed.', err);
       return { status: 500, jsonBody: { error: 'internal_error', message: 'Could not load requests, please try again later' } };

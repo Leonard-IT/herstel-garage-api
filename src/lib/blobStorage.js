@@ -115,4 +115,14 @@ async function discard(paths) {
   await Promise.all(paths.map((path) => container().getBlobClient(path).deleteIfExists().catch(() => {})));
 }
 
-module.exports = { createUploadUrls, createReadUrls, inspectUploads, copyBlob, discard };
+/** The bytes of a stored image, or null when it does not exist (anymore). Images are at most 10 MB, so a buffer is fine. */
+async function readImage(blobPath) {
+  try {
+    return await container().getBlobClient(blobPath).downloadToBuffer();
+  } catch (err) {
+    if (err.statusCode === 404) return null;
+    throw err;
+  }
+}
+
+module.exports = { createUploadUrls, createReadUrls, inspectUploads, copyBlob, discard, readImage };
