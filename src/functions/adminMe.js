@@ -9,7 +9,7 @@ const { getCallerId } = require('../lib/garageAuth');
 app.http('adminMe', {
   methods: ['GET'],
   authLevel: 'anonymous', // the caller is authenticated by App Service Authentication
-  route: 'admin/me',
+  route: 'backoffice/me',
   handler: async (request) => {
     const callerId = getCallerId(request.headers);
     if (!callerId) return { status: 401, jsonBody: { error: 'unauthorized', message: 'Sign in to continue' } };

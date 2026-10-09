@@ -19,13 +19,14 @@ const PHONE =
 
 const stubs = {};
 const handlers = {};
+const routes = {};
 function stubModule(resolved, exports) {
   require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports };
 }
 const lazy = (name) => (...args) => stubs[name](...args);
 
 stubModule(require.resolve('@azure/functions', { paths: [functionsDir] }), {
-  app: { http: (name, options) => { handlers[name] = options.handler; } },
+  app: { http: (name, options) => { handlers[name] = options.handler; routes[name] = options.route; } },
 });
 stubModule(require.resolve('../src/lib/adminAuth'), { requireAdmin: lazy('requireAdmin'), isAdminId: lazy('isAdminId') });
 stubModule(require.resolve('../src/lib/shareLinkRepository'), {
@@ -70,6 +71,21 @@ test.beforeEach(() => {
   stubs.createLinks = async () => ({ links: [] });
   stubs.listLinks = async () => ({ stats: {}, links: [] });
   stubs.revokeLink = async () => true;
+});
+
+// ---------- routes ----------
+
+test('the administrator endpoints live under /api/backoffice, never under /api/admin', () => {
+  // In production every /api/admin/... request was answered with an empty 404 before it reached the function: "admin" is a name Azure
+  // Functions and App Service keep for their own management endpoints. The dashboard then never found out that the user is an
+  // administrator. Do not name a route "admin".
+  const adminFunctions = ['adminMe', 'listAdminRepairRequests', 'listAdminGarages', 'createShareLinks', 'listShareLinks', 'revokeShareLink'];
+  for (const name of adminFunctions) {
+    assert.match(routes[name], /^backoffice\//, `${name}: ${routes[name]}`);
+  }
+  for (const [name, route] of Object.entries(routes)) {
+    assert.doesNotMatch(route, /^admin(\/|$)/i, `${name} must not use a route that starts with "admin": ${route}`);
+  }
 });
 
 // ---------- the public page ----------

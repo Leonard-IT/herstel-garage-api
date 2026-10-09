@@ -43,7 +43,7 @@ exactly what the customer asked for.
 
 ## Links delen: ideas for later
 
-The page where the team makes links, copies them and sees whether they were opened (herstel-garage-web `/delen`, API `/api/admin/share-links`).
+The page where the team makes links, copies them and sees whether they were opened (herstel-garage-web `/delen`, API `/api/backoffice/share-links`).
 Roughly in order of how much they would help.
 
 ### Sending and sharing

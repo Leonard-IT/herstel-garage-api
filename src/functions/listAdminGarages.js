@@ -8,7 +8,7 @@ const { listApprovedGarages } = require('../lib/shareLinkRepository');
 app.http('listAdminGarages', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'admin/garages',
+  route: 'backoffice/garages',
   handler: async (request, context) => {
     try {
       const { response } = requireAdmin(request, context);

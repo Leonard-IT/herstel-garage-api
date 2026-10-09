@@ -5,11 +5,11 @@ const { requireAdmin } = require('../lib/adminAuth');
 const { revokeLink } = require('../lib/shareLinkRepository');
 const { GUID } = require('../lib/shareValidation');
 
-// DELETE /api/admin/share-links/{id}: the link stops working at once (it stays in the list, marked as revoked).
+// DELETE /api/backoffice/share-links/{id}: the link stops working at once (it stays in the list, marked as revoked).
 app.http('revokeShareLink', {
   methods: ['DELETE'],
   authLevel: 'anonymous',
-  route: 'admin/share-links/{id}',
+  route: 'backoffice/share-links/{id}',
   handler: async (request, context) => {
     try {
       const { response } = requireAdmin(request, context);

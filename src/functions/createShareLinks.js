@@ -7,13 +7,13 @@ const { createLinks } = require('../lib/shareLinkRepository');
 const { shareUrl } = require('../lib/shareToken');
 
 /**
- * POST /api/admin/share-links { repairRequestId, garageIds: [...], expiresInDays? }: one link per garage, to the public page of the
+ * POST /api/backoffice/share-links { repairRequestId, garageIds: [...], expiresInDays? }: one link per garage, to the public page of the
  * request. A garage that already has a running link for this request gets that one back (existing: true) instead of a second one.
  */
 app.http('createShareLinks', {
   methods: ['POST'],
   authLevel: 'anonymous',
-  route: 'admin/share-links',
+  route: 'backoffice/share-links',
   handler: async (request, context) => {
     try {
       const { response, adminId } = requireAdmin(request, context);

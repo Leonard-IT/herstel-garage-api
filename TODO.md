@@ -114,7 +114,7 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
 
 ## Share a public link to a repair request
 
-Built (migration 007, `/api/admin/...`, `/api/s/...`; see the README): a link per repair request **and per garage** that exists in the
+Built (migration 007, `/api/backoffice/...`, `/api/s/...`; see the README): a link per repair request **and per garage** that exists in the
 platform, a public page with a WhatsApp-style preview (title, short description, photo), open tracking (when, how often, previews counted
 separately), stats, and an administrator page "Links delen" in the garage dashboard (to be moved to the admin site). Tested with stubs and
 in a browser against a mock API; **the SQL has not been run against a database yet**.

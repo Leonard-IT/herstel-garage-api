@@ -6,13 +6,13 @@ const { listLinks } = require('../lib/shareLinkRepository');
 const { shareUrl } = require('../lib/shareToken');
 
 /**
- * GET /api/admin/share-links: the newest links with whether and when they were opened, and the totals for the top of the page
+ * GET /api/backoffice/share-links: the newest links with whether and when they were opened, and the totals for the top of the page
  * (links made, opened, open rate, average time until the first open).
  */
 app.http('listShareLinks', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'admin/share-links',
+  route: 'backoffice/share-links',
   handler: async (request, context) => {
     try {
       const { response } = requireAdmin(request, context);

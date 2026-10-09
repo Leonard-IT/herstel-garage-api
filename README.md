@@ -127,16 +127,18 @@ The platform team makes a link to one repair request for one garage that exists 
 WhatsApp). The link opens a public page, without login, with a few details and the photos, and a button to the dashboard to make an offer.
 Table: `RepairRequestShareLinks` (migration 007).
 
-**Administrator endpoints** (login required, and the login must be on the `ADMIN_USER_IDS` list; see settings below):
+**Administrator endpoints** (login required, and the login must be on the `ADMIN_USER_IDS` list; see settings below). They live under
+`/api/backoffice/...` and not under `/api/admin/...`: in production every `/api/admin/...` request was answered with an empty 404 before it reached
+the function, because Azure keeps that name for its own management endpoints. Do not use `admin` as a route name (a test guards this).
 
 | Endpoint | What it does |
 | --- | --- |
-| `GET /api/admin/me` | `{ isAdmin }` for any signed-in user (the dashboard uses it to show the menu item) |
-| `GET /api/admin/repair-requests` | The open requests a link can be made for (same shape as the garage list) |
-| `GET /api/admin/garages` | The approved garages a link can be made for: `{ garages: [{ id, companyName, city }] }` |
-| `POST /api/admin/share-links` | `{ repairRequestId, garageIds: [...], expiresInDays? }` (1 to 90, default 7). Makes one link per garage (at most 50). A garage that already has a running link for this request gets that one back (`existing: true`). 201 `{ links: [{ id, url, repairRequestId, garage, createdAt, expiresAt, existing }] }`; 404 when the request is gone or no longer open; 422 for invalid input or a garage that does not exist or is not approved |
-| `GET /api/admin/share-links` | `{ stats, links }`: the newest 500 links, each with `status` (`active`, `expired`, `revoked`), `firstOpenedAt`, `lastOpenedAt`, `openCount`, `firstPreviewAt`, `previewCount`; and `stats`: `totalLinks`, `openedLinks`, `openRate` (0 to 1, null without links) and `averageSecondsToOpen` (null when none was opened) |
-| `DELETE /api/admin/share-links/{id}` | Revokes a link: it stops working at once. 204, or 404 |
+| `GET /api/backoffice/me` | `{ isAdmin }` for any signed-in user (the dashboard uses it to show the menu item) |
+| `GET /api/backoffice/repair-requests` | The open requests a link can be made for (same shape as the garage list) |
+| `GET /api/backoffice/garages` | The approved garages a link can be made for: `{ garages: [{ id, companyName, city }] }` |
+| `POST /api/backoffice/share-links` | `{ repairRequestId, garageIds: [...], expiresInDays? }` (1 to 90, default 7). Makes one link per garage (at most 50). A garage that already has a running link for this request gets that one back (`existing: true`). 201 `{ links: [{ id, url, repairRequestId, garage, createdAt, expiresAt, existing }] }`; 404 when the request is gone or no longer open; 422 for invalid input or a garage that does not exist or is not approved |
+| `GET /api/backoffice/share-links` | `{ stats, links }`: the newest 500 links, each with `status` (`active`, `expired`, `revoked`), `firstOpenedAt`, `lastOpenedAt`, `openCount`, `firstPreviewAt`, `previewCount`; and `stats`: `totalLinks`, `openedLinks`, `openRate` (0 to 1, null without links) and `averageSecondsToOpen` (null when none was opened) |
+| `DELETE /api/backoffice/share-links/{id}` | Revokes a link: it stops working at once. 204, or 404 |
 
 **Public endpoints** (no login):
 

@@ -9,7 +9,7 @@ const { presentRequestList } = require('../lib/requestListView');
 app.http('listAdminRepairRequests', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'admin/repair-requests',
+  route: 'backoffice/repair-requests',
   handler: async (request, context) => {
     try {
       const { response } = requireAdmin(request, context);
