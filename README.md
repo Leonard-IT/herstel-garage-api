@@ -9,6 +9,12 @@ Registrations are stored in Azure SQL Database (SQL Server in Docker locally).
 
 Registers a garage (status `pending`, awaiting verification). The KvK number is the unique key.
 
+**Through an invitation.** A garage we reached out to (a prospect, see below) signs up through the button on its share link. The sign-up
+form then sends the link's token as `invitationToken`. That garage is **approved straight away** (status `approved`), and its prospect
+is linked to it (`GarageProspects.GarageId`, status `registered`). A registration without a token whose KvK number matches a prospect is
+linked to that prospect too, but stays `pending`. A revoked link does not count as an invitation; an expired one still does. The
+response has `invited: true` for a registration through an invitation. The garage's login still has to be linked by hand (see TODO.md).
+
 ```json
 {
   "companyName": "Garage Test B.V.",
@@ -124,10 +130,17 @@ Locally set `ALLOW_DEV_AUTH=true` (already in local.settings) and send `x-dev-us
 
 ### Sharing a repair request with garages (links)
 
-The platform team makes a link to one repair request for one garage that exists in the platform, and shares it (for example in
-WhatsApp). The link opens a public page, without login, with a few details and the photos, and a button to the dashboard to make an offer.
-Table: `RepairRequestShareLinks` (migration 007). One link per request and garage: making it again returns the running one. Default lifetime
-7 days. Tokens are stored as they are, so a link can be copied again later; a token only gives a limited view of one request.
+The platform team makes a link to one repair request for one garage, and shares it (for example in WhatsApp). The link opens a public
+page, without login, with a few details and the photos, and a button. Table: `RepairRequestShareLinks` (migrations 007 and 010). One link
+per request and recipient: making it again returns the running one. Default lifetime 7 days. Tokens are stored as they are, so a link can be
+copied again later; a token only gives a limited view of one request.
+
+**Garages and prospects.** A link goes to a garage in the network (`Garages`, status `approved`) or to a **prospect**: a garage that
+meets our criteria but has not signed up (`GarageProspects`, migration 010). Prospects are kept out of `Garages` on purpose: they lack the
+sign-up data, and nothing that means "garages in our network" can pick them up by accident. A prospect goes `new` → `contacted` (its first
+link) → `registered` (it signed up; `GarageId` points to its garage). On the page, a garage's button leads to the request in the dashboard;
+a prospect's button leads to the sign-up form (`aanmelden-garage.html#uitnodiging=<token>` on the website), and signing up there approves
+the garage straight away.
 
 **Administrator endpoints** (login required, and the login must be on the `ADMIN_USER_IDS` list; see settings below). They live under
 `/api/backoffice/...` and not under `/api/admin/...`: in production every `/api/admin/...` request was answered with an empty 404 before it reached
@@ -138,8 +151,11 @@ the function, because Azure keeps that name for its own management endpoints. Do
 | `GET /api/backoffice/me` | `{ isAdmin }` for any signed-in user (the dashboard uses it to show the menu item) |
 | `GET /api/backoffice/repair-requests` | The open requests a link can be made for (same shape as the garage list) |
 | `GET /api/backoffice/garages` | The approved garages a link can be made for: `{ garages: [{ id, companyName, city }] }` |
-| `POST /api/backoffice/share-links` | `{ repairRequestId, garageIds: [...], expiresInDays? }` (1 to 90, default 7). Makes one link per garage (at most 50). A garage that already has a running link for this request gets that one back (`existing: true`). 201 `{ links: [{ id, url, repairRequestId, garage, createdAt, expiresAt, existing }] }`; 404 when the request is gone or no longer open; 422 for invalid input or a garage that does not exist or is not approved |
-| `GET /api/backoffice/share-links` | `{ stats, links }`: the newest 500 links, each with `status` (`active`, `expired`, `revoked`), `firstOpenedAt`, `lastOpenedAt`, `openCount`, `firstPreviewAt`, `previewCount`; and `stats`: `totalLinks`, `openedLinks`, `openRate` (0 to 1, null without links) and `averageSecondsToOpen` (null when none was opened) |
+| `GET /api/backoffice/prospects` | All prospects: `{ prospects: [{ id, companyName, city, street, postalCode, phone, email, website, kvkNumber, notes, status, garageId, createdAt, linkCount }] }` |
+| `POST /api/backoffice/prospects` | Adds a prospect: `{ companyName, city, street?, postalCode?, phone?, email?, website?, kvkNumber?, notes? }`. Only the name and the place are required. 201 with the prospect; 422 for invalid input; 409 when another prospect has the same KvK number |
+| `POST /api/backoffice/share-links` | `{ repairRequestId, garageIds?: [...], prospectIds?: [...], expiresInDays? }` (1 to 90, default 7). Makes one link per garage and per prospect (together at least 1 and at most 50). A recipient that already has a running link for this request gets that one back (`existing: true`); a prospect that gets its first link becomes `contacted`. 201 `{ links: [{ id, url, repairRequestId, recipient: { type: 'garage' \| 'prospect', id, companyName, city }, createdAt, expiresAt, existing }] }`; 404 when the request is gone or no longer open; 422 for invalid input, a garage that does not exist or is not approved, or a prospect that does not exist or signed up already |
+| `GET /api/backoffice/share-links` | `{ stats, links }`: the newest 500 links, each with its `recipient`, `status` (`active`, `expired`, `revoked`), `firstOpenedAt`, `lastOpenedAt`, `openCount`, `firstPreviewAt`, `previewCount`, `firstClickedAt`, `clickCount`; and `stats`: `totalLinks`, `openedLinks`, `openRate` (0 to 1, null without links) and `averageSecondsToOpen` (null when none was opened) |
+| `GET /api/backoffice/onboarding` | The onboarding funnel: `{ invites: [{ id, garageId, garageName, city, repairRequestTitle, events: { linkShared, linkOpened, viewRequestClicked, registered, requestViewed, offerCreated } }] }`, one per link to a prospect or to a garage that came from one (links to garages that joined on their own are left out). `garageId` is the prospect's id, also on its later invites as a garage, so they group together. Each event is the first time that step happened (null when not yet): link made, opened by a person, button clicked, the garage signed up, the request viewed by a user of the garage, an offer by the garage. The dashboard works out the rest |
 | `DELETE /api/backoffice/share-links/{id}` | Revokes a link: it stops working at once. 204, or 404 |
 
 **Public endpoints** (no login):
@@ -147,6 +163,7 @@ the function, because Azure keeps that name for its own management endpoints. Do
 | Endpoint | What it does |
 | --- | --- |
 | `GET /api/s/{token}` | The page. Server-rendered HTML with Open Graph tags (title, short description, first photo), because chat apps build the link preview from those tags and do not run JavaScript. Shows the car, kind of damage, location, postal area, photos and a button to the dashboard. It does **not** show the customer's own description, a license plate, contact details, or anything about offers |
+| `GET /api/s/{token}/open` | The button on the page. Counts the click (`firstClickedAt`, `clickCount`; the same rules as an open: people only, not `HEAD` and not `?nc=1`) and answers 302: a garage to the request in the dashboard, a prospect to the sign-up form with the link as its invitation. A link that does not work gives the same 404 page as the link itself |
 | `GET /api/s/{token}/photo/{n}` | Photo number n (1-based), served through the API, so the preview's photo address keeps working for as long as the link does (a storage link would expire after 15 minutes). HEIC photos are left out: browsers and chat apps cannot show them |
 
 An unknown, expired or revoked link, and a request that is no longer open, all give the same plain 404 page, so nothing can be learned from the answer. The page is not indexed (`noindex`), not cached, and passes no Referer.
@@ -159,7 +176,8 @@ An unknown, expired or revoked link, and a request that is no longer open, all g
 | --- | --- |
 | `ADMIN_USER_IDS` | Comma-separated Entra object ids of the platform administrators. **Empty means nobody is an administrator**, so set it before using the admin page. Use the same object id as in `GarageUsers.ExternalId` |
 | `SHARE_BASE_URL` | Optional. The address in front of `/s/<token>` in the links, for a short or custom domain. Default: the Function App's own address (`https://<app>.azurewebsites.net/api`) |
-| `DASHBOARD_URL` | Optional. Where the page's button leads. Default `https://garage.snelhersteld.nl` |
+| `DASHBOARD_URL` | Optional. Where the page's button leads a garage in the network. Default `https://garage.snelhersteld.nl` |
+| `CUSTOMER_SITE_URL` | Optional, also used for the customer page. The website whose sign-up form the button leads a prospect to. Default `https://snelhersteld.nl` |
 
 ### The customer's page: view and answer an offer
 

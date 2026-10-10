@@ -47,7 +47,7 @@ app.http('viewSharedRequest', {
       return {
         status: 200,
         headers: HEADERS,
-        body: renderSharePage(view, { token, baseUrl: shareBaseUrl(), dashboardUrl: dashboardUrl() }),
+        body: renderSharePage(view, { token, baseUrl: shareBaseUrl(), noCount: request.query.get('nc') === '1' }),
       };
     } catch (err) {
       context.error('Showing a shared request failed.', err);

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { createToken, isValidToken, shareBaseUrl, shareUrl, dashboardUrl, isPreviewBot } = require('../src/lib/shareToken');
+const { createToken, isValidToken, shareBaseUrl, shareUrl, dashboardUrl, clickTarget, isPreviewBot } = require('../src/lib/shareToken');
 const { validateCreateLinks, MAX_GARAGES_PER_REQUEST } = require('../src/lib/shareValidation');
 const { adminIds, isAdminId, requireAdmin } = require('../src/lib/adminAuth');
 const { buildStats, linkStatus } = require('../src/lib/shareLinkRepository');
@@ -74,7 +74,7 @@ test('people with a normal browser are not mistaken for a previewer', () => {
 test('accepts a request with garages and defaults to 7 days', () => {
   const { value, errors } = validateCreateLinks({ repairRequestId: GUID_A.toUpperCase(), garageIds: [GUID_B, GUID_B.toUpperCase()] });
   assert.strictEqual(errors, undefined);
-  assert.deepStrictEqual(value, { repairRequestId: GUID_A, garageIds: [GUID_B], expiresInDays: 7 });
+  assert.deepStrictEqual(value, { repairRequestId: GUID_A, garageIds: [GUID_B], prospectIds: [], expiresInDays: 7 });
 });
 
 test('rejects a missing request, no garages, bad ids, too many garages and a bad lifetime', () => {
@@ -89,6 +89,15 @@ test('rejects a missing request, no garages, bad ids, too many garages and a bad
   }
   assert.strictEqual(validateCreateLinks({ repairRequestId: GUID_A, garageIds: [GUID_B], expiresInDays: 30 }).value.expiresInDays, 30);
   assert.ok(validateCreateLinks(null).errors.body);
+});
+
+test('links can go to prospects as well as garages: together at least one and at most the maximum', () => {
+  const { value } = validateCreateLinks({ repairRequestId: GUID_A, prospectIds: [GUID_B.toUpperCase()] });
+  assert.deepStrictEqual(value, { repairRequestId: GUID_A, garageIds: [], prospectIds: [GUID_B], expiresInDays: 7 });
+  assert.ok(validateCreateLinks({ repairRequestId: GUID_A, garageIds: [], prospectIds: [] }).errors.garageIds);
+  assert.ok(validateCreateLinks({ repairRequestId: GUID_A, prospectIds: ['nope'] }).errors.prospectIds);
+  const half = (prefix) => Array.from({ length: MAX_GARAGES_PER_REQUEST / 2 + 1 }, (_, i) => `${prefix}0000000-0000-0000-0000-${String(i).padStart(12, '0')}`);
+  assert.ok(validateCreateLinks({ repairRequestId: GUID_A, garageIds: half('1'), prospectIds: half('2') }).errors.garageIds);
 });
 
 // ---------- administrators ----------
@@ -202,10 +211,24 @@ test('without a photo that can be shown the preview has no image and a plain car
   assert.match(describeRequest(view({ images: [] })), /^Lakschade · Rechterzijde · postcode 3511\. Bekijk/);
 });
 
-test('the page leads to the request in the dashboard, where the garage logs in to make an offer', () => {
-  const html = renderSharePage(view(), options);
-  assert.ok(html.includes(`href="https://garage.test/aanvragen/${GUID_A}"`));
-  assert.match(html, /Bekijk de aanvraag en doe een aanbod/);
+test('the button goes through the click endpoint; for a garage it says log in, for a prospect sign up', () => {
+  const garage = renderSharePage(view({ recipientType: 'garage' }), options);
+  assert.ok(garage.includes(`href="https://share.test/api/s/${TOKEN}/open"`));
+  assert.match(garage, /Bekijk de aanvraag en doe een aanbod/);
+  assert.match(garage, /log je in met het account van je garage/);
+
+  const prospect = renderSharePage(view({ recipientType: 'prospect' }), options);
+  assert.ok(prospect.includes(`href="https://share.test/api/s/${TOKEN}/open"`));
+  assert.match(prospect, /Meld je garage aan en doe een aanbod/);
+
+  // The admin's own test visit (?nc=1) passes that on to the button, so the test click is not counted either.
+  assert.ok(renderSharePage(view(), { ...options, noCount: true }).includes(`/s/${TOKEN}/open?nc=1"`));
+});
+
+test('the click leads a garage to the request in the dashboard, and a prospect to the sign-up form with its invitation', () => {
+  const env = { DASHBOARD_URL: 'https://garage.test', CUSTOMER_SITE_URL: 'https://site.test/' };
+  assert.strictEqual(clickTarget(view({ recipientType: 'garage' }), TOKEN, env), `https://garage.test/aanvragen/${GUID_A}`);
+  assert.strictEqual(clickTarget(view({ recipientType: 'prospect' }), TOKEN, env), `https://site.test/aanmelden-garage.html#uitnodiging=${TOKEN}`);
 });
 
 test('text from the database is escaped, so a customer cannot inject HTML or script into the page', () => {

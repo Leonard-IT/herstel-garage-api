@@ -60,6 +60,20 @@ function describeRequest(view) {
   return `${parts.join(' · ')}. Bekijk de aanvraag en doe een aanbod.`;
 }
 
+// The button under the request. A garage in the network logs in to make an offer; a prospect (a garage we reached out to) signs up
+// first. Its sign-up is approved straight away, but its login is still linked by hand (see TODO.md, "Linking a login to a garage"), so
+// the text promises contact, not an instant offer.
+const CALLS_TO_ACTION = {
+  garage: {
+    button: 'Bekijk de aanvraag en doe een aanbod',
+    note: 'Voor een aanbod log je in met het account van je garage.',
+  },
+  prospect: {
+    button: 'Meld je garage aan en doe een aanbod',
+    note: 'Aanmelden duurt een paar minuten en is gratis. Daarna zetten we je account klaar, zodat je de volledige aanvraag kunt bekijken en een aanbod kunt doen.',
+  },
+};
+
 const carTitle = (view) => `${view.car.make} ${view.car.model}${view.car.buildYear ? ` (${view.car.buildYear})` : ''}`;
 
 const STYLE = `
@@ -122,10 +136,14 @@ ${body}
  * The page for a working link: the details of the request, the photos, and a button to the dashboard to make an offer.
  * `urls` holds the absolute address of this page and of the photos, and the dashboard address.
  */
-function renderSharePage(view, { token, baseUrl, dashboardUrl, now = new Date() }) {
+function renderSharePage(view, { token, baseUrl, now = new Date(), noCount = false }) {
   const title = `Nieuwe reparatieaanvraag: ${carTitle(view)}`;
   const photos = displayablePhotos(view.images);
   const photoUrl = (number) => `${baseUrl}/s/${token}/photo/${number}`;
+  // The button goes through /s/{token}/open, which counts the click and then sends the visitor on (see openSharedRequest). A test
+  // visit by the admin (?nc=1) passes that on, so its click is not counted either.
+  const clickUrl = `${baseUrl}/s/${token}/open${noCount ? '?nc=1' : ''}`;
+  const cta = CALLS_TO_ACTION[view.recipientType] ?? CALLS_TO_ACTION.garage;
   const rows = [
     ['Auto', carTitle(view)],
     ['Soort schade', DAMAGE_TYPE_LABELS[view.damageType] ?? 'Onbekend'],
@@ -148,8 +166,8 @@ ${
     : ''
 }
 <dl>${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
-<a class="cta" href="${escapeHtml(`${dashboardUrl}/aanvragen/${view.requestId}`)}">Bekijk de aanvraag en doe een aanbod</a>
-<p class="note">Voor een aanbod log je in met het account van je garage.</p>`;
+<a class="cta" href="${escapeHtml(clickUrl)}">${escapeHtml(cta.button)}</a>
+<p class="note">${escapeHtml(cta.note)}</p>`;
 
   return shell({
     title,
@@ -181,4 +199,5 @@ module.exports = {
   escapeHtml,
   timeAgo,
   DISPLAYABLE_IMAGE_TYPES,
+  DAMAGE_TYPE_LABELS,
 };

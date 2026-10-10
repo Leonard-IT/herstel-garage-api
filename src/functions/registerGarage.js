@@ -3,6 +3,7 @@
 const { app } = require('@azure/functions');
 const { validateRegistration } = require('../lib/validation');
 const { createGarage } = require('../lib/garageRepository');
+const { isValidToken } = require('../lib/shareToken');
 
 app.http('registerGarage', {
   methods: ['POST'],
@@ -21,9 +22,13 @@ app.http('registerGarage', {
       return { status: 422, jsonBody: { error: 'validation_failed', message: 'Validation failed', details: errors } };
     }
 
+    // Signing up through the link of an invitation (the sign-up form passes the share link's token): approved straight away, see
+    // createGarage. A missing or malformed token is simply an ordinary registration.
+    const invitationToken = isValidToken(body?.invitationToken) ? body.invitationToken : null;
+
     try {
-      const garage = await createGarage(value);
-      context.log(`Garage registered: ${garage.id}`);
+      const garage = await createGarage(value, { invitationToken });
+      context.log(`Garage registered: ${garage.id} (${garage.status}${garage.invited ? ', through an invitation' : ''})`);
       return { status: 201, jsonBody: garage };
     } catch (err) {
       if (err.statusCode === 409) {

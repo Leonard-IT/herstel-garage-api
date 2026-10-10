@@ -146,6 +146,35 @@ Before it works in production:
 
 Later: see the "Links delen" section of `SUGGESTIONS.md`.
 
+## Prospects and onboarding
+
+Built (migration 010; see the README): garage prospects apart from `Garages`, links to prospects, click counting on the public page,
+sign-up through an invitation (approved straight away), and the onboarding funnel on real data (`GET /api/backoffice/onboarding`).
+Tested with stubs and against the mock API; **the SQL has not been run against a database yet**.
+
+- [ ] Apply migration 010 (the pipeline does that on the next push to main) and try the whole path once: add a prospect, share a request
+      with it, open the link on a phone, click the button, sign up, and check the funnel.
+- [ ] **Link the login of a garage that signed up through an invitation.** This is now the slowest step: the garage is approved at once,
+      but can only view the request and make an offer once its `GarageUsers` row exists, which is still done by hand. While a customer
+      waits, every hour counts. Build the invitation-by-email flow from "Linking a login to a garage", or at least send the team a
+      message when a garage signs up through an invitation.
+- [ ] Prospects: change the status by hand (`not_interested`), edit and remove prospects, and import a list (CSV) of garages that meet
+      the criteria. Today prospects can only be added one by one, on the "Links delen" page.
+- [ ] Pre-fill the sign-up form for an invited garage (company name, place, phone) from its prospect.
+- [ ] The onboarding funnel's "Laatste 30 dagen" and "Alle regio's" filters do nothing yet.
+
+## Approval flow for garages that sign up themselves
+
+For now we reach out to garages ourselves, and a garage that signs up through our link is approved straight away. A garage that signs up
+on its own (through the website, without a link) stays `pending`, and nothing approves it yet. That becomes relevant once garages find us
+themselves:
+
+- [ ] An approval screen for administrators: the pending registrations with their details (KvK, insurance, accreditations), approve or
+      reject with a reason, and a message to the garage either way.
+- [ ] Checks before approval: KvK number exists and is active (KvK API), liability insurance, specializations that match.
+- [ ] Approval is the moment to create the first login invitation (see "Linking a login to a garage").
+- [ ] Show "Goedgekeurd" as its own step in the onboarding funnel once approval is not instant any more.
+
 ## Login setup and verification
 
 - Create the Entra External ID tenant, the `garage-signin` user flow and the two app registrations; fill in `auth-config.js`.

@@ -7,8 +7,9 @@ const { createLinks } = require('../lib/shareLinkRepository');
 const { shareUrl } = require('../lib/shareToken');
 
 /**
- * POST /api/backoffice/share-links { repairRequestId, garageIds: [...], expiresInDays? }: one link per garage, to the public page of the
- * request. A garage that already has a running link for this request gets that one back (existing: true) instead of a second one.
+ * POST /api/backoffice/share-links { repairRequestId, garageIds?: [...], prospectIds?: [...], expiresInDays? }: one link per garage in the
+ * network and per prospect, to the public page of the request. A recipient that already has a running link for this request gets that
+ * one back (existing: true) instead of a second one.
  */
 app.http('createShareLinks', {
   methods: ['POST'],
@@ -35,15 +36,13 @@ app.http('createShareLinks', {
       if (result.notFound) {
         return { status: 404, jsonBody: { error: 'not_found', message: 'Repair request not found or no longer open' } };
       }
-      if (result.unknownGarageIds) {
-        return {
-          status: 422,
-          jsonBody: {
-            error: 'validation_failed',
-            message: 'Validation failed',
-            details: { garageIds: `Unknown or not approved garages: ${result.unknownGarageIds.join(', ')}` },
-          },
-        };
+      if (result.unknownGarageIds || result.unknownProspectIds) {
+        const details = {};
+        if (result.unknownGarageIds?.length) details.garageIds = `Unknown or not approved garages: ${result.unknownGarageIds.join(', ')}`;
+        if (result.unknownProspectIds?.length) {
+          details.prospectIds = `Unknown prospects, or prospects that signed up already: ${result.unknownProspectIds.join(', ')}`;
+        }
+        return { status: 422, jsonBody: { error: 'validation_failed', message: 'Validation failed', details } };
       }
 
       context.log(`Share links for request ${value.repairRequestId}: ${result.links.length} (${result.links.filter((l) => l.existing).length} existing)`);

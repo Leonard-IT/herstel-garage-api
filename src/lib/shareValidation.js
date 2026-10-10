@@ -9,9 +9,19 @@ const MAX_GARAGES_PER_REQUEST = 50;
 
 const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
+/** A list of ids, or an error message. Missing means an empty list. */
+function idList(raw, what) {
+  if (raw === undefined || raw === null) return { ids: [] };
+  if (!Array.isArray(raw) || raw.some((id) => typeof id !== 'string' || !GUID.test(id.trim()))) {
+    return { error: `Must be a list of ${what} ids` };
+  }
+  return { ids: [...new Set(raw.map((id) => id.trim().toLowerCase()))] };
+}
+
 /**
- * Validates "create links": { repairRequestId, garageIds: [guid, ...], expiresInDays? }.
- * Returns { value } or { errors: { field: message } }. Whether the request and the garages exist is checked by the caller.
+ * Validates "create links": { repairRequestId, garageIds?: [guid, ...], prospectIds?: [guid, ...], expiresInDays? }. Links can go to
+ * garages in the network and to prospects (garages we reach out to), together at least one and at most MAX_GARAGES_PER_REQUEST.
+ * Returns { value } or { errors: { field: message } }. Whether the request, the garages and the prospects exist is checked by the caller.
  */
 function validateCreateLinks(body) {
   if (!isObject(body)) return { errors: { body: 'Request body must be a JSON object' } };
@@ -20,16 +30,16 @@ function validateCreateLinks(body) {
   const repairRequestId = typeof body.repairRequestId === 'string' ? body.repairRequestId.trim().toLowerCase() : '';
   if (!GUID.test(repairRequestId)) errors.repairRequestId = 'Must be the id of a repair request';
 
-  let garageIds = [];
-  if (!Array.isArray(body.garageIds) || body.garageIds.length === 0) {
-    errors.garageIds = 'Choose at least one garage';
-  } else if (body.garageIds.some((id) => typeof id !== 'string' || !GUID.test(id.trim()))) {
-    errors.garageIds = 'Must be a list of garage ids';
-  } else {
-    garageIds = [...new Set(body.garageIds.map((id) => id.trim().toLowerCase()))];
-    if (garageIds.length > MAX_GARAGES_PER_REQUEST) {
-      errors.garageIds = `At most ${MAX_GARAGES_PER_REQUEST} garages at a time`;
-    }
+  const garages = idList(body.garageIds, 'garage');
+  const prospects = idList(body.prospectIds, 'prospect');
+  if (garages.error) errors.garageIds = garages.error;
+  if (prospects.error) errors.prospectIds = prospects.error;
+  const garageIds = garages.ids ?? [];
+  const prospectIds = prospects.ids ?? [];
+  if (!garages.error && !prospects.error) {
+    const total = garageIds.length + prospectIds.length;
+    if (total === 0) errors.garageIds = 'Choose at least one garage or prospect';
+    else if (total > MAX_GARAGES_PER_REQUEST) errors.garageIds = `At most ${MAX_GARAGES_PER_REQUEST} garages at a time`;
   }
 
   let expiresInDays = DEFAULT_EXPIRES_IN_DAYS;
@@ -41,7 +51,7 @@ function validateCreateLinks(body) {
   }
 
   if (Object.keys(errors).length) return { errors };
-  return { value: { repairRequestId, garageIds, expiresInDays } };
+  return { value: { repairRequestId, garageIds, prospectIds, expiresInDays } };
 }
 
 module.exports = { validateCreateLinks, GUID, DEFAULT_EXPIRES_IN_DAYS, MAX_EXPIRES_IN_DAYS, MAX_GARAGES_PER_REQUEST };

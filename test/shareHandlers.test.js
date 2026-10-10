@@ -36,11 +36,12 @@ stubModule(require.resolve('../src/lib/shareLinkRepository'), {
   revokeLink: lazy('revokeLink'),
   getPublicView: lazy('getPublicView'),
   recordView: lazy('recordView'),
+  recordClick: lazy('recordClick'),
 });
 stubModule(require.resolve('../src/lib/blobStorage'), { readImage: lazy('readImage') });
 stubModule(require.resolve('../src/lib/garageRequestRepository'), { listOpenRequests: lazy('listOpenRequests') });
 stubModule(require.resolve('../src/lib/requestListView'), { presentRequestList: async (requests) => ({ repairRequests: requests }) });
-for (const file of ['adminMe', 'listAdminRepairRequests', 'listAdminGarages', 'createShareLinks', 'listShareLinks', 'revokeShareLink', 'viewSharedRequest', 'getSharedRequestPhoto']) {
+for (const file of ['adminMe', 'listAdminRepairRequests', 'listAdminGarages', 'createShareLinks', 'listShareLinks', 'revokeShareLink', 'viewSharedRequest', 'getSharedRequestPhoto', 'openSharedRequest']) {
   require(`../src/functions/${file}`);
 }
 
@@ -65,6 +66,7 @@ test.beforeEach(() => {
   stubs.isAdminId = (id) => id === 'admin-1';
   stubs.getPublicView = async () => publicView();
   stubs.recordView = async () => {};
+  stubs.recordClick = async () => {};
   stubs.readImage = async () => Buffer.from('JPEGDATA');
   stubs.listOpenRequests = async () => [];
   stubs.listApprovedGarages = async () => [];
@@ -257,8 +259,8 @@ test('creating links: one per garage, with a ready-to-share address and without 
     received = args;
     return {
       links: [
-        { id: 'l1', token: TOKEN, repairRequestId: GUID_A, garage: { id: GUID_B, companyName: 'Van Dijk', city: 'Utrecht' }, createdAt: 'c', expiresAt: 'e', existing: false },
-        { id: 'l2', token: 'U'.repeat(43), repairRequestId: GUID_A, garage: { id: 'g2', companyName: 'Jansen', city: 'Breda' }, createdAt: 'c', expiresAt: 'e', existing: true },
+        { id: 'l1', token: TOKEN, repairRequestId: GUID_A, recipient: { type: 'garage', id: GUID_B, companyName: 'Van Dijk', city: 'Utrecht' }, createdAt: 'c', expiresAt: 'e', existing: false },
+        { id: 'l2', token: 'U'.repeat(43), repairRequestId: GUID_A, recipient: { type: 'prospect', id: 'p2', companyName: 'Jansen', city: 'Breda' }, createdAt: 'c', expiresAt: 'e', existing: true },
       ],
     };
   };
@@ -271,7 +273,7 @@ test('creating links: one per garage, with a ready-to-share address and without 
   const ok = await admin('createShareLinks', { body: { repairRequestId: GUID_A, garageIds: [GUID_B, '33333333-3333-3333-3333-333333333333'], expiresInDays: 14 } });
 
   assert.strictEqual(ok.status, 201);
-  assert.deepStrictEqual(received, { repairRequestId: GUID_A, garageIds: [GUID_B, '33333333-3333-3333-3333-333333333333'], expiresInDays: 14, createdBy: 'admin-1' });
+  assert.deepStrictEqual(received, { repairRequestId: GUID_A, garageIds: [GUID_B, '33333333-3333-3333-3333-333333333333'], prospectIds: [], expiresInDays: 14, createdBy: 'admin-1' });
   assert.strictEqual(ok.jsonBody.links[0].url, `https://share.test/api/s/${TOKEN}`);
   assert.strictEqual(ok.jsonBody.links[1].existing, true);
   assert.ok(ok.jsonBody.links.every((link) => !('token' in link)));
@@ -318,4 +320,51 @@ test('revoking: 204 when revoked, 404 for a link that does not exist, and a non-
 
   stubs.revokeLink = async () => assert.fail('must not be called');
   assert.strictEqual((await admin('revokeShareLink', { params: { id: "1'; DROP TABLE x;--" } })).status, 404);
+});
+
+// ---------- the button on the public page ----------
+
+const click = ({ token = TOKEN, method = 'GET', ua = PHONE, query = '' } = {}) =>
+  handlers.openSharedRequest(
+    { method, params: { token }, query: new URLSearchParams(query), headers: new Headers(ua === undefined ? {} : { 'user-agent': ua }) },
+    context,
+  );
+
+test('the button counts a click by a person and sends a garage on to the request in the dashboard', async () => {
+  let clicked;
+  stubs.recordClick = async (linkId) => { clicked = linkId; };
+
+  const response = await click();
+
+  assert.strictEqual(response.status, 302);
+  assert.strictEqual(response.headers.Location, `https://garage.test/aanvragen/${GUID_A}`);
+  assert.strictEqual(response.headers['Cache-Control'], 'no-store');
+  assert.strictEqual(clicked, 'link-1');
+});
+
+test('a prospect is sent to the sign-up form, with the link as its invitation', async () => {
+  stubs.getPublicView = async () => publicView({ recipientType: 'prospect' });
+  const response = await click();
+  assert.strictEqual(response.status, 302);
+  assert.ok(response.headers.Location.endsWith(`/aanmelden-garage.html#uitnodiging=${TOKEN}`), response.headers.Location);
+});
+
+test('link previewers, HEAD requests and the admin test (?nc=1) are sent on but not counted; a failure to count never stops anyone', async () => {
+  let clicks = 0;
+  stubs.recordClick = async () => { clicks += 1; };
+  for (const options of [{ ua: WHATSAPP }, { ua: '' }, { method: 'HEAD' }, { query: 'nc=1' }]) {
+    assert.strictEqual((await click(options)).status, 302, JSON.stringify(options));
+  }
+  assert.strictEqual(clicks, 0);
+
+  stubs.recordClick = async () => { throw new Error('database busy'); };
+  assert.strictEqual((await click()).status, 302);
+});
+
+test('the button of a link that no longer works shows the same page as the link itself', async () => {
+  stubs.getPublicView = async () => null;
+  const gone = await click();
+  assert.strictEqual(gone.status, 404);
+  assert.match(gone.body, /niet meer geldig/);
+  assert.strictEqual((await click({ token: 'short' })).status, 404);
 });

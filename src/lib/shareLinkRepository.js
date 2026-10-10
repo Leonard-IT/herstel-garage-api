@@ -6,7 +6,19 @@ const { createToken } = require('./shareToken');
 
 const LIST_LIMIT = 500;
 
-/** Approved garages, the ones a link can be made for. */
+// A link goes to a garage in the network (GarageId) or to a prospect, a garage we reach out to (ProspectId); exactly one of the two
+// (migration 010). Both show up as a "recipient": { type: 'garage' | 'prospect', id, companyName, city }.
+const RECIPIENT_JOINS = `
+  LEFT JOIN dbo.Garages g ON g.Id = l.GarageId
+  LEFT JOIN dbo.GarageProspects p ON p.Id = l.ProspectId`;
+const RECIPIENT_COLUMNS = `
+  CASE WHEN l.ProspectId IS NOT NULL THEN 'prospect' ELSE 'garage' END AS RecipientType,
+  COALESCE(l.GarageId, l.ProspectId) AS RecipientId,
+  COALESCE(g.CompanyName, p.CompanyName) AS RecipientName,
+  COALESCE(g.City, p.City) AS RecipientCity`;
+const toRecipient = (row) => ({ type: row.RecipientType, id: row.RecipientId, companyName: row.RecipientName, city: row.RecipientCity });
+
+/** Approved garages, the ones in the network a link can be made for. */
 async function listApprovedGarages() {
   const pool = await getPool();
   const result = await pool.request().query(`
@@ -22,14 +34,26 @@ function inList(prefix, values, type) {
   };
 }
 
+/** The rows of the given ids that may get a link, by lowercase id. `query` selects Id, CompanyName, City WHERE ... AND Id IN (<list>). */
+async function findRecipients(tx, prefix, ids, query) {
+  if (!ids.length) return new Map();
+  const list = inList(prefix, ids, sql.UniqueIdentifier);
+  const request = new sql.Request(tx);
+  list.bind(request);
+  const result = await request.query(query(list.names));
+  return new Map(result.recordset.map((row) => [String(row.Id).toLowerCase(), row]));
+}
+
 /**
- * Makes a link to a repair request for each of the garages.
+ * Makes a link to a repair request for each of the garages and prospects.
  *
- * Returns { notFound: true } when the request does not exist or is no longer open, { unknownGarageIds } when a garage does not exist
- * or is not approved (nothing is made then), or { links }. A garage that already has a running link for this request (not revoked, not
- * expired) gets that link back with `existing: true` instead of a second one, so clicking twice does not create duplicates.
+ * Garages must be approved (in the network); prospects must not have signed up yet (then they are a garage, and get a garage link).
+ * Returns { notFound: true } when the request does not exist or is no longer open, { unknownGarageIds, unknownProspectIds } when one of
+ * them cannot get a link (nothing is made then), or { links }. A recipient that already has a running link for this request (not
+ * revoked, not expired) gets that link back with `existing: true` instead of a second one, so clicking twice does not make doubles.
+ * A prospect that gets its first link goes from 'new' to 'contacted'.
  */
-async function createLinks({ repairRequestId, garageIds, expiresInDays, createdBy, newToken = createToken }) {
+async function createLinks({ repairRequestId, garageIds = [], prospectIds = [], expiresInDays, createdBy, newToken = createToken }) {
   const pool = await getPool();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -43,54 +67,66 @@ async function createLinks({ repairRequestId, garageIds, expiresInDays, createdB
       return { notFound: true };
     }
 
-    const garageList = inList('g', garageIds, sql.UniqueIdentifier);
-    const garagesRequest = new sql.Request(tx);
-    garageList.bind(garagesRequest);
-    const garages = await garagesRequest.query(
-      `SELECT Id, CompanyName, City FROM dbo.Garages WHERE Status = 'approved' AND Id IN (${garageList.names})`,
-    );
-    const byId = new Map(garages.recordset.map((g) => [String(g.Id).toLowerCase(), g]));
-    const unknownGarageIds = garageIds.filter((id) => !byId.has(id.toLowerCase()));
-    if (unknownGarageIds.length) {
+    const garages = await findRecipients(tx, 'g', garageIds, (names) =>
+      `SELECT Id, CompanyName, City FROM dbo.Garages WHERE Status = 'approved' AND Id IN (${names})`);
+    const prospects = await findRecipients(tx, 'p', prospectIds, (names) =>
+      `SELECT Id, CompanyName, City FROM dbo.GarageProspects WHERE GarageId IS NULL AND Status <> 'registered' AND Id IN (${names})`);
+    const unknownGarageIds = garageIds.filter((id) => !garages.has(id.toLowerCase()));
+    const unknownProspectIds = prospectIds.filter((id) => !prospects.has(id.toLowerCase()));
+    if (unknownGarageIds.length || unknownProspectIds.length) {
       await tx.rollback();
-      return { unknownGarageIds };
+      return { unknownGarageIds, unknownProspectIds };
     }
 
-    const existingRequest = new sql.Request(tx).input('repairRequestId', sql.UniqueIdentifier, repairRequestId);
-    garageList.bind(existingRequest);
-    const existingRows = await existingRequest.query(`
-      SELECT Id, GarageId, Token, CreatedAt, ExpiresAt FROM dbo.RepairRequestShareLinks WITH (UPDLOCK)
-      WHERE RepairRequestId = @repairRequestId AND GarageId IN (${garageList.names})
-        AND RevokedAt IS NULL AND ExpiresAt > SYSUTCDATETIME()`);
-    const existing = new Map(existingRows.recordset.map((row) => [String(row.GarageId).toLowerCase(), row]));
+    const existingRows = await new sql.Request(tx).input('repairRequestId', sql.UniqueIdentifier, repairRequestId).query(`
+      SELECT Id, GarageId, ProspectId, Token, CreatedAt, ExpiresAt FROM dbo.RepairRequestShareLinks WITH (UPDLOCK)
+      WHERE RepairRequestId = @repairRequestId AND RevokedAt IS NULL AND ExpiresAt > SYSUTCDATETIME()`);
+    const existing = new Map(
+      existingRows.recordset.map((row) => [
+        row.ProspectId ? `prospect:${String(row.ProspectId).toLowerCase()}` : `garage:${String(row.GarageId).toLowerCase()}`,
+        row,
+      ]),
+    );
 
+    const recipients = [
+      ...garageIds.map((id) => ({ type: 'garage', id, row: garages.get(id.toLowerCase()) })),
+      ...prospectIds.map((id) => ({ type: 'prospect', id, row: prospects.get(id.toLowerCase()) })),
+    ];
     const links = [];
-    for (const garageId of garageIds) {
-      const garage = byId.get(garageId.toLowerCase());
-      let row = existing.get(garageId.toLowerCase());
+    for (const recipient of recipients) {
+      let row = existing.get(`${recipient.type}:${recipient.id.toLowerCase()}`);
       const isExisting = Boolean(row);
       if (!row) {
         const inserted = await new sql.Request(tx)
           .input('repairRequestId', sql.UniqueIdentifier, repairRequestId)
-          .input('garageId', sql.UniqueIdentifier, garageId)
+          .input('garageId', sql.UniqueIdentifier, recipient.type === 'garage' ? recipient.id : null)
+          .input('prospectId', sql.UniqueIdentifier, recipient.type === 'prospect' ? recipient.id : null)
           .input('token', sql.Char(43), newToken())
           .input('createdBy', sql.VarChar(100), createdBy)
           .input('days', sql.Int, expiresInDays)
-          .query(`INSERT INTO dbo.RepairRequestShareLinks (RepairRequestId, GarageId, Token, CreatedBy, ExpiresAt)
+          .query(`INSERT INTO dbo.RepairRequestShareLinks (RepairRequestId, GarageId, ProspectId, Token, CreatedBy, ExpiresAt)
                   OUTPUT inserted.Id, inserted.Token, inserted.CreatedAt, inserted.ExpiresAt
-                  VALUES (@repairRequestId, @garageId, @token, @createdBy, DATEADD(DAY, @days, SYSUTCDATETIME()))`);
+                  VALUES (@repairRequestId, @garageId, @prospectId, @token, @createdBy, DATEADD(DAY, @days, SYSUTCDATETIME()))`);
         row = inserted.recordset[0];
       }
       links.push({
         id: row.Id,
         token: row.Token,
         repairRequestId,
-        garage: { id: garage.Id, companyName: garage.CompanyName, city: garage.City },
+        recipient: { type: recipient.type, id: recipient.row.Id, companyName: recipient.row.CompanyName, city: recipient.row.City },
         createdAt: row.CreatedAt.toISOString(),
         expiresAt: row.ExpiresAt.toISOString(),
         existing: isExisting,
       });
     }
+
+    if (prospectIds.length) {
+      const list = inList('c', prospectIds, sql.UniqueIdentifier);
+      const request = new sql.Request(tx);
+      list.bind(request);
+      await request.query(`UPDATE dbo.GarageProspects SET Status = 'contacted' WHERE Status = 'new' AND Id IN (${list.names})`);
+    }
+
     await tx.commit();
     return { links };
   } catch (err) {
@@ -122,7 +158,7 @@ function buildStats(row) {
 
 const iso = (date) => (date ? date.toISOString() : null);
 
-/** The newest links with their open status, and the totals over all links. */
+/** The newest links with their open and click status, and the totals over all links. */
 async function listLinks(now = new Date()) {
   const pool = await getPool();
   const stats = await pool.request().query(`
@@ -132,11 +168,10 @@ async function listLinks(now = new Date()) {
     FROM dbo.RepairRequestShareLinks`);
   const rows = await pool.request().input('limit', sql.Int, LIST_LIMIT).query(`
     SELECT TOP (@limit) l.Id, l.Token, l.CreatedAt, l.ExpiresAt, l.RevokedAt, l.FirstOpenedAt, l.LastOpenedAt, l.OpenCount,
-           l.FirstPreviewAt, l.PreviewCount,
-           g.Id AS GarageId, g.CompanyName, g.City,
+           l.FirstPreviewAt, l.PreviewCount, l.FirstClickedAt, l.ClickCount, ${RECIPIENT_COLUMNS},
            rr.Id AS RequestId, rr.Status AS RequestStatus, rr.PostalCode, dr.DamageType, c.Make, c.Model
     FROM dbo.RepairRequestShareLinks l
-    JOIN dbo.Garages g ON g.Id = l.GarageId
+    ${RECIPIENT_JOINS}
     JOIN dbo.RepairRequests rr ON rr.Id = l.RepairRequestId
     JOIN dbo.DamageReports dr ON dr.Id = rr.DamageReportId
     JOIN dbo.Cars c ON c.Id = dr.CarId
@@ -156,7 +191,9 @@ async function listLinks(now = new Date()) {
       openCount: row.OpenCount,
       firstPreviewAt: iso(row.FirstPreviewAt),
       previewCount: row.PreviewCount,
-      garage: { id: row.GarageId, companyName: row.CompanyName, city: row.City },
+      firstClickedAt: iso(row.FirstClickedAt),
+      clickCount: row.ClickCount,
+      recipient: toRecipient(row),
       repairRequest: {
         id: row.RequestId,
         status: row.RequestStatus,
@@ -179,11 +216,13 @@ async function revokeLink(id) {
 /**
  * What the public page may show for a token, or null when the link does not work (unknown, expired, revoked, or the request is no
  * longer open). Only a few details about the request; never contact details, a license plate or the customer's own description.
+ * `recipientType` says whether the link went to a garage in the network or to a prospect, which decides where the button leads.
  */
 async function getPublicView(token, now = new Date()) {
   const pool = await getPool();
   const result = await pool.request().input('token', sql.Char(43), token).query(`
     SELECT l.Id AS LinkId, l.ExpiresAt, l.RevokedAt,
+           CASE WHEN l.ProspectId IS NOT NULL THEN 'prospect' ELSE 'garage' END AS RecipientType,
            rr.Id AS RequestId, rr.Status, rr.PostalCode, rr.CreatedAt,
            dr.Id AS DamageReportId, dr.DamageType, dr.DamageLocation,
            c.Make, c.Model, c.BuildYear
@@ -200,6 +239,7 @@ async function getPublicView(token, now = new Date()) {
   return {
     linkId: row.LinkId,
     requestId: row.RequestId,
+    recipientType: row.RecipientType,
     createdAt: row.CreatedAt,
     car: { make: row.Make, model: row.Model, buildYear: row.BuildYear },
     damageType: row.DamageType,
@@ -225,4 +265,25 @@ async function recordView(linkId, { preview }) {
     WHERE Id = @id`);
 }
 
-module.exports = { listApprovedGarages, createLinks, listLinks, revokeLink, getPublicView, recordView, buildStats, linkStatus };
+/** Records a click on the page's button (people only; the caller leaves out link previewers and test clicks). */
+async function recordClick(linkId) {
+  const pool = await getPool();
+  await pool.request().input('id', sql.UniqueIdentifier, linkId).query(`
+    UPDATE dbo.RepairRequestShareLinks SET
+      ClickCount     = ClickCount + 1,
+      FirstClickedAt = COALESCE(FirstClickedAt, SYSUTCDATETIME()),
+      LastClickedAt  = SYSUTCDATETIME()
+    WHERE Id = @id`);
+}
+
+module.exports = {
+  listApprovedGarages,
+  createLinks,
+  listLinks,
+  revokeLink,
+  getPublicView,
+  recordView,
+  recordClick,
+  buildStats,
+  linkStatus,
+};

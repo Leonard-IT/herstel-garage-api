@@ -26,6 +26,18 @@ const shareUrl = (token, env = process.env) => `${shareBaseUrl(env)}/s/${token}`
 /** The dashboard that the "make an offer" button on the public page leads to. */
 const dashboardUrl = (env = process.env) => (env.DASHBOARD_URL?.trim() || 'https://garage.snelhersteld.nl').replace(/\/+$/, '');
 
+/**
+ * Where the button on the public page leads: a garage in the network to the request in the dashboard; a prospect to the sign-up form
+ * on the website, with the link's token as its invitation. The token goes after the #, so it never reaches the website's server logs.
+ */
+function clickTarget(view, token, env = process.env) {
+  if (view.recipientType === 'prospect') {
+    const site = (env.CUSTOMER_SITE_URL?.trim() || 'https://snelhersteld.nl').replace(/\/+$/, '');
+    return `${site}/aanmelden-garage.html#uitnodiging=${token}`;
+  }
+  return `${dashboardUrl(env)}/aanvragen/${view.requestId}`;
+}
+
 // Programs that fetch a page to build a preview or to index it, not a person who reads it. Chat apps (WhatsApp, Telegram, Slack,
 // Discord, Skype, Facebook, LinkedIn, X), search engines, mail scanners and command line tools. Apple's iMessage previews present
 // themselves as "facebookexternalhit"/"Facebot"/"Twitterbot", so they are covered too.
@@ -38,4 +50,4 @@ const PREVIEW_BOTS =
  */
 const isPreviewBot = (userAgent) => !userAgent || PREVIEW_BOTS.test(userAgent);
 
-module.exports = { createToken, isValidToken, shareBaseUrl, shareUrl, dashboardUrl, isPreviewBot };
+module.exports = { createToken, isValidToken, shareBaseUrl, shareUrl, dashboardUrl, clickTarget, isPreviewBot };
