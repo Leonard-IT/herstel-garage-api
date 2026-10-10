@@ -2,6 +2,7 @@
 
 const sql = require('mssql');
 const { getPool } = require('./db');
+const { createToken } = require('./shareToken');
 
 const DUPLICATE_KEY_ERRORS = [2601, 2627];
 const SUBMISSION_INDEX = 'UX_RepairRequests_Submission';
@@ -34,9 +35,10 @@ async function listActivePreferences() {
  *
  * Each damage must carry a pre-generated `id`, `damageType`, `images: [{ blobPath, contentType, sizeBytes }]`
  * and `preferenceIds: number[]`.
- * Returns { requests, duplicate }.
+ * Every request gets its own customer token: the secret in the customer's link to that request (see migration 008).
+ * Returns { requests, duplicate }; each request carries its customerToken.
  */
-async function createRepairRequests({ submissionId, postalCode, customer, car, damages }) {
+async function createRepairRequests({ submissionId, postalCode, carDrivable = null, carLocation = null, customer, car, damages }) {
   const pool = await getPool();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -105,11 +107,14 @@ async function createRepairRequests({ submissionId, postalCode, customer, car, d
         .input('contactPhone', sql.NVarChar(30), customer.phone)
         .input('submissionId', sql.UniqueIdentifier, submissionId)
         .input('submissionIndex', sql.TinyInt, damageIndex)
+        .input('customerToken', sql.Char(43), createToken())
+        .input('carDrivable', sql.VarChar(10), carDrivable)
+        .input('carLocation', sql.VarChar(20), carLocation)
         .query(`INSERT INTO dbo.RepairRequests (DamageReportId, CustomerId, PostalCode, ContactFirstName, ContactLastName,
-                  ContactPhone, SubmissionId, SubmissionIndex)
-                OUTPUT inserted.Id, inserted.Status, inserted.CreatedAt
+                  ContactPhone, SubmissionId, SubmissionIndex, CustomerToken, CarDrivable, CarLocation)
+                OUTPUT inserted.Id, inserted.Status, inserted.CreatedAt, inserted.CustomerToken
                 VALUES (@damageReportId, @customerId, @postalCode, @contactFirstName, @contactLastName,
-                  @contactPhone, @submissionId, @submissionIndex)`);
+                  @contactPhone, @submissionId, @submissionIndex, @customerToken, @carDrivable, @carLocation)`);
       const row = result.recordset[0];
 
       for (const preferenceId of damage.preferenceIds) {
@@ -118,7 +123,9 @@ async function createRepairRequests({ submissionId, postalCode, customer, car, d
           .input('preferenceId', sql.Int, preferenceId)
           .query('INSERT INTO dbo.RepairRequestPreferences (RepairRequestId, PreferenceId) VALUES (@repairRequestId, @preferenceId)');
       }
-      requests.push({ id: row.Id, damageReportId: damage.id, status: row.Status, createdAt: row.CreatedAt.toISOString() });
+      requests.push({
+        id: row.Id, damageReportId: damage.id, status: row.Status, createdAt: row.CreatedAt.toISOString(), customerToken: row.CustomerToken,
+      });
     }
 
     await tx.commit();
@@ -135,10 +142,10 @@ async function createRepairRequests({ submissionId, postalCode, customer, car, d
 async function findBySubmission(submissionId) {
   const pool = await getPool();
   const result = await pool.request().input('submissionId', sql.UniqueIdentifier, submissionId).query(`
-    SELECT Id, DamageReportId, Status, CreatedAt FROM dbo.RepairRequests
+    SELECT Id, DamageReportId, Status, CreatedAt, CustomerToken FROM dbo.RepairRequests
     WHERE SubmissionId = @submissionId ORDER BY SubmissionIndex`);
   return result.recordset.map((r) => ({
-    id: r.Id, damageReportId: r.DamageReportId, status: r.Status, createdAt: r.CreatedAt.toISOString(),
+    id: r.Id, damageReportId: r.DamageReportId, status: r.Status, createdAt: r.CreatedAt.toISOString(), customerToken: r.CustomerToken,
   }));
 }
 

@@ -7,6 +7,10 @@ const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'we
 // Same vocabulary as the garage specializations, so requests can be matched to garages.
 const DAMAGE_TYPES = ['lakschade', 'carrosserie', 'ruitschade', 'bumper', 'ev', 'overig'];
 const DAMAGE_LOCATIONS = ['front', 'rear', 'left', 'right', 'roof', 'windscreen', 'wheels', 'interior', 'other'];
+// Whether the car can still be driven safely, and where it is now: they decide the customer's next steps after accepting an offer.
+// Optional, so a form that does not ask yet still works; stored as NULL then.
+const CAR_DRIVABLE = ['yes', 'no', 'unknown'];
+const CAR_LOCATIONS = ['home', 'towing', 'other'];
 // Paths handed out by createDamageImageUploadUrls: pending/<guid>.<ext>
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PENDING_BLOB_PATH = /^pending\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|heic)$/;
@@ -58,6 +62,11 @@ function validateRepairRequest(body) {
       errors['car.buildYear'] = 'Must be a valid year';
     }
   }
+
+  const carDrivable = str(body.carDrivable) || null;
+  if (carDrivable && !CAR_DRIVABLE.includes(carDrivable)) errors.carDrivable = `Must be one of: ${CAR_DRIVABLE.join(', ')}`;
+  const carLocation = str(body.carLocation) || null;
+  if (carLocation && !CAR_LOCATIONS.includes(carLocation)) errors.carLocation = `Must be one of: ${CAR_LOCATIONS.join(', ')}`;
 
   const damages = [];
   if (!Array.isArray(body.damages) || body.damages.length === 0) {
@@ -113,6 +122,8 @@ function validateRepairRequest(body) {
     value: {
       submissionId,
       postalCode,
+      carDrivable,
+      carLocation,
       customer: { firstName, lastName, email, phone },
       car: { licensePlate, make, model, buildYear },
       damages,
@@ -149,4 +160,6 @@ module.exports = {
   IMAGE_TYPES,
   DAMAGE_LOCATIONS,
   DAMAGE_TYPES,
+  CAR_DRIVABLE,
+  CAR_LOCATIONS,
 };

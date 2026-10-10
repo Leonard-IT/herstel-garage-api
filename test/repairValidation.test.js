@@ -87,3 +87,17 @@ test('requires a valid postal code and a submission id', () => {
   }
   assert.ok(validateRepairRequest({ ...valid(), submissionId: 'not-a-guid' }).errors.submissionId);
 });
+
+test('car drivable and car location are optional, and only known values are accepted', () => {
+  const { value } = validateRepairRequest(valid());
+  assert.strictEqual(value.carDrivable, null);
+  assert.strictEqual(value.carLocation, null);
+
+  const answered = validateRepairRequest({ ...valid(), carDrivable: 'no', carLocation: 'towing' }).value;
+  assert.strictEqual(answered.carDrivable, 'no');
+  assert.strictEqual(answered.carLocation, 'towing');
+
+  const { errors } = validateRepairRequest({ ...valid(), carDrivable: 'maybe', carLocation: 'moon' });
+  assert.ok(errors.carDrivable);
+  assert.ok(errors.carLocation);
+});

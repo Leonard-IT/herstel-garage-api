@@ -40,10 +40,7 @@ Open work on this API and the garage dashboard (`herstel-garage-web`).
 
 ## Matching garages to requests
 
-Done (migration 004): requests carry a `DamageType` (same vocabulary as garage specializations) and the customer's `PostalCode`;
-garages see the damage type and the 4-digit area only.
-
-Still to do, so garages can be matched and judge distance:
+To do, so garages can be matched and judge distance:
 
 - `Garages.ServiceArea` is free text and cannot be queried. Replace it with structured coverage (a geocoded point plus a radius,
   or a `GarageServicePostalAreas` table) and geocode garage and request locations.
@@ -56,10 +53,9 @@ Still to do, so garages can be matched and judge distance:
   the RDW open data and store make, model, build year and fuel type from there; keep user input as fallback.
 - **GDPR.** No way to delete or anonymize a customer: `Customers` is referenced by foreign keys without cascade, and photos are personal
   data. Add `DeletedAt` and an anonymize routine, plus a retention period for cancelled or unassigned requests (including the blobs).
-- **Offers.** `Offers` table (`RepairRequestId`, `GarageId`, `Amount DECIMAL(10,2)`, intake date, inclusions, status) and the assigned
-  garage on the request.
-- **Status history.** `RepairRequests.Status` only knows `open | in_progress | completed | cancelled`. PROJECT.md also needs "in optie"
-  (exclusivity window, who and until when) and the price-clock start. Add a `RepairRequestEvents` table (who, what, when) as audit trail.
+- **Status history.** `RepairRequests.Status` has no "in optie" stored (it is worked out from the offers, see the README). PROJECT.md
+  also needs the exclusivity window (who and until when) and the price-clock start. Add a `RepairRequestEvents` table (who, what, when)
+  as audit trail.
 - **Taxatie.** Home for the independent appraisal: amount, expert, date.
 - **Photo angle.** Optional `Label` on `DamageReportImages` (front, rear, close-up...).
 - **Lookup tables.** `GarageSpecializations.Code`, `GarageAccreditations.Code`, `DamageLocation`, `DamageType` and `RepairRequests.Status`
@@ -79,16 +75,11 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
 
 - [ ] **Decide the price model first**: price clock from PROJECT.md (the garage accepts the current price) or the garage enters a price.
       See `SUGGESTIONS.md`; it decides the screens and the table.
-- [x] `Offers` table (migration 005) and `POST /api/garage/repair-requests/{id}/offers` with `availableFrom` and `validityHours`
-      (12, 24 or 48), validated on the server. Tested with stubs (`test/createGarageOffer.test.js`); **the SQL has not been run against
-      a database yet**: apply migration 005 and try the endpoint once (locally or after the pipeline runs).
-- [x] Status "in option" (migration 006 adds the stored status `accepted`; `in_option` is worked out from the offers). The list and detail
-      endpoints return `status` and the garage's own `myOffer`; the dashboard shows the "In optie" label on the card and the detail page.
-      **Decision to confirm:** while a request is in option, other garages cannot make an offer (409 `in_option`), as PROJECT.md describes
-      (exclusivity window). To allow parallel offers, remove the check in `src/lib/offerRepository.js` and adjust the label.
 - [ ] Apply migrations 005 and 006 and try the flow once against a real database (the SQL has only been reviewed, not run).
-- [ ] Decide who may accept an offer and what happens then (`RepairRequests.Status = 'accepted'`, the other offers, the customer's contact
-      details for the garage). Nothing sets `accepted` yet.
+- [ ] Decide whether other garages may make an offer while a request is in option. Today they get 409 `in_option`, as PROJECT.md
+      describes (exclusivity window). To allow parallel offers, remove the check in `src/lib/offerRepository.js` and adjust the label.
+- [x] Decide who may accept an offer and what happens then: the customer, on their own page (`mijn-aanvraag.html` in herstel-web, see
+      the README). Accepting sets the offer and the request to `accepted`; declining sets the offer to `declined` and the request stays open.
 - [ ] Count in-option requests separately in the dashboard (the "Openstaande aanvragen" badge now includes them) and let a garage see
       the end of its own option on the card ("nog 5 uur").
 - [ ] List a garage's offers (`GET /api/garage/offers`), and withdraw an offer (`status = withdrawn`) with the rules from `SUGGESTIONS.md`.
@@ -96,13 +87,26 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
       offers must also check `ExpiresAt`.
 - [ ] Rules still open: what happens to the request and the other offers when an offer is accepted (status, who can accept).
       Already enforced: only open requests, one active offer per garage and request, expiry time set on the server.
-- [x] Dashboard connected to the offers endpoint (`src/api/offers.ts`).
 - [ ] Extra offer fields from `SUGGESTIONS.md` (duration, pickup and delivery, rental car, warranty, parts type, note, insurance handling),
       once the price model is decided.
 - [ ] Release the customer's contact details to the garage once its offer is accepted. Until then garages only see the damage, photos and
       preferences (no personal data, no license plate).
 - [ ] Serve the data the overview cards currently fake with example values: view count, insured amount, status and mileage
       (`exampleCardData.ts` in the dashboard).
+
+## Customer page (view and accept an offer)
+
+- [ ] Apply migration 008 (the pipeline does that on the next push to main) and try the whole flow once against the real database:
+      submit, make an offer in the dashboard, open the customer link, accept. The SQL has been reviewed, not run.
+- [ ] Get the link to the customer. The form shows it once, after submitting. Until there is email, send it by hand: the team can get it
+      with `POST /api/backoffice/repair-requests/{id}/customer-link`. A button for that in the backoffice is still to do.
+- [ ] Email to the customer: "request received" (with the link), "you have an offer", "your offer expires in 2 hours".
+- [ ] Tell the garage that its offer was accepted, and show it the customer's name and phone number. Today an accepted request
+      disappears from the garage's list (the garage endpoints only read open requests), so the garage only knows if we tell it.
+- [ ] Let the garage set `in_progress` and `completed` (the customer page already explains both stages).
+- [ ] A contact address for customers on the page (the texts say "neem contact met ons op", but the site has no address yet).
+- [ ] Show a price on the offer, once the price model is decided.
+- [ ] Ask more in the form when it pays off: insurance type (WA / allrisk / self), whether there is a damage form with another party.
 
 ## Dashboard follow-ups
 
@@ -114,10 +118,8 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
 
 ## Share a public link to a repair request
 
-Built (migration 007, `/api/backoffice/...`, `/api/s/...`; see the README): a link per repair request **and per garage** that exists in the
-platform, a public page with a WhatsApp-style preview (title, short description, photo), open tracking (when, how often, previews counted
-separately), stats, and an administrator page "Links delen" in the garage dashboard (to be moved to the admin site). Tested with stubs and
-in a browser against a mock API; **the SQL has not been run against a database yet**.
+Built (migration 007; see the README). Tested with stubs and in a browser against a mock API; **the SQL has not been run against a
+database yet**. The administrator page "Links delen" lives in the garage dashboard and is to be moved to the admin site.
 
 Before it works in production:
 
@@ -133,21 +135,7 @@ Before it works in production:
 - [ ] Optional: a short, own domain for the links (`SHARE_BASE_URL`), instead of the long azurewebsites.net address.
 - [ ] Rate limiting on the public endpoints (tokens are 256-bit random, so guessing is not realistic, but crawlers and abuse are).
 
-Decisions made, change them if needed:
-
-- Who creates links: platform administrators only (the `ADMIN_USER_IDS` list), not garages.
-- What is public: car, kind of damage, location, postal area and photos. **Not** the customer's free-text description (it can contain names
-  or phone numbers), the license plate, contact details, or anything about offers. Photos can still show a license plate or people.
-- One link per request and garage; making it again returns the running one. Default lifetime 7 days (3, 7, 14 or 30 in the page).
-- Tokens are stored in the database as they are, so a link can be copied again later; a token only gives a limited view of one request.
-
 Later: see the "Links delen" section of `SUGGESTIONS.md`.
-
-## Mock fields removed from the dashboard
-
-Removed from the Openstaande aanvragen mockup, because we don't collect them: taxatie, insurer, kilometerstand and fee rows,
-and the offer form ("Stel je aanbod samen"). The page now only shows what actually exists. Bring these back, backed by real
-data, when the offer flow is built (see "Taking a job").
 
 ## Login setup and verification
 

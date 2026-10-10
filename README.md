@@ -125,7 +125,8 @@ Locally set `ALLOW_DEV_AUTH=true` (already in local.settings) and send `x-dev-us
 
 The platform team makes a link to one repair request for one garage that exists in the platform, and shares it (for example in
 WhatsApp). The link opens a public page, without login, with a few details and the photos, and a button to the dashboard to make an offer.
-Table: `RepairRequestShareLinks` (migration 007).
+Table: `RepairRequestShareLinks` (migration 007). One link per request and garage: making it again returns the running one. Default lifetime
+7 days. Tokens are stored as they are, so a link can be copied again later; a token only gives a limited view of one request.
 
 **Administrator endpoints** (login required, and the login must be on the `ADMIN_USER_IDS` list; see settings below). They live under
 `/api/backoffice/...` and not under `/api/admin/...`: in production every `/api/admin/...` request was answered with an empty 404 before it reached
@@ -158,6 +159,27 @@ An unknown, expired or revoked link, and a request that is no longer open, all g
 | `ADMIN_USER_IDS` | Comma-separated Entra object ids of the platform administrators. **Empty means nobody is an administrator**, so set it before using the admin page. Use the same object id as in `GarageUsers.ExternalId` |
 | `SHARE_BASE_URL` | Optional. The address in front of `/s/<token>` in the links, for a short or custom domain. Default: the Function App's own address (`https://<app>.azurewebsites.net/api`) |
 | `DASHBOARD_URL` | Optional. Where the page's button leads. Default `https://garage.snelhersteld.nl` |
+
+### The customer's page: view and answer an offer
+
+Every repair request has a customer token (migration 008), made when it is submitted. The submit response gives the customer's link,
+`customerUrl` = `https://snelhersteld.nl/mijn-aanvraag.html#<token>` (herstel-web). The token sits after the `#`, so it is never sent to the
+website's server. There is no login: the link is the key. It only lets the holder see that one request and accept or decline an offer on it.
+
+| Endpoint | What it does |
+| --- | --- |
+| `GET /api/customer/repair-requests/{token}` | `{ request, offers, nextSteps }`. `request.stage` is `waiting_for_offer`, `offer_received`, `accepted`, `in_progress`, `completed` or `cancelled`. `offers` holds only the running offer and the accepted one; the garage's phone and email are only included once its offer is accepted. `nextSteps` is the explanation for the customer (`src/lib/customerNextSteps.js`): title, summary, warnings and steps, each step marked with who acts (`you`, `garage`, `us`) |
+| `POST /api/customer/repair-requests/{token}/offers/{offerId}/accept` | Accepts a running offer: offer `accepted`, request `accepted`. 200 with the new view; 409 `request_closed`, `offer_expired` or `offer_closed`; 404 `not_found`. Accepting twice is fine |
+| `POST /api/customer/repair-requests/{token}/offers/{offerId}/decline` | Declines a running offer: offer `declined`, the request stays open so other garages can make an offer again. Same answers |
+| `POST /api/backoffice/repair-requests/{id}/customer-link` | Administrators: `{ customerUrl }` for a request, to send to the customer by hand. Requests from before migration 008 get a token now |
+
+What the customer is told depends on the stage and on what they said in the form: whether the car can still drive (`carDrivable`:
+`yes`, `no`, `unknown`), where it is (`carLocation`: `home`, `towing`, `other`), and the preferences pickup, rental car and insurance.
+Both fields are optional in `POST /api/repair-requests`, so older forms keep working.
+
+| Setting | Meaning |
+| --- | --- |
+| `CUSTOMER_SITE_URL` | Optional. The website in front of `/mijn-aanvraag.html#<token>`. Default `https://snelhersteld.nl` |
 
 ## Local development
 

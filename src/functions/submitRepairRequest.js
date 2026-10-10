@@ -5,6 +5,13 @@ const { app } = require('@azure/functions');
 const { validateRepairRequest } = require('../lib/repairValidation');
 const { getActivePreferences, createRepairRequests } = require('../lib/repairRequestRepository');
 const { inspectUploads, copyBlob, discard } = require('../lib/blobStorage');
+const { customerPageUrl } = require('../lib/customerLink');
+
+// The customer token only leaves the API inside the link to the customer's own page.
+const present = (requests) => requests.map(({ customerToken, ...request }) => ({
+  ...request,
+  customerUrl: customerToken ? customerPageUrl(customerToken) : null,
+}));
 
 const validationFailed = (details) => ({
   status: 422,
@@ -71,6 +78,8 @@ app.http('submitRepairRequest', {
       const { requests, duplicate } = await createRepairRequests({
         submissionId: value.submissionId,
         postalCode: value.postalCode,
+        carDrivable: value.carDrivable,
+        carLocation: value.carLocation,
         customer: value.customer,
         car: value.car,
         damages,
@@ -80,11 +89,11 @@ app.http('submitRepairRequest', {
         await discard(copied);
         await discard(value.damages.flatMap((d) => d.images));
         context.log(`Duplicate submission ${value.submissionId}, returning the existing requests`);
-        return { status: 200, jsonBody: { repairRequests: requests } };
+        return { status: 200, jsonBody: { repairRequests: present(requests) } };
       }
       await discard(value.damages.flatMap((d) => d.images));
       context.log(`Repair requests created: ${requests.map((r) => r.id).join(', ')}`);
-      return { status: 201, jsonBody: { repairRequests: requests } };
+      return { status: 201, jsonBody: { repairRequests: present(requests) } };
     } catch (err) {
       await discard(copied);
       context.error('Repair request submission failed.', err);
