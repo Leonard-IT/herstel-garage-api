@@ -1,8 +1,7 @@
 'use strict';
 
 const EMPLOYEE_COUNTS = ['1-5', '6-15', '16-30', '30+'];
-const SPECIALIZATIONS = ['lakschade', 'carrosserie', 'ruitschade', 'bumper', 'ev', 'oldtimers', 'overig'];
-const ACCREDITATIONS = ['rdw', 'focwa', 'bovag', 'iso'];
+const SLUG = /^[a-z0-9-]{1,50}$/;
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
@@ -83,16 +82,18 @@ function validateRegistration(body) {
     if (!Number.isInteger(liftCount) || liftCount < 0) errors.liftCount = 'Must be a non-negative integer';
   }
 
-  const list = (field, allowed) => {
+  // The options are maintained in the database (Specializations, Accreditations), so only their shape is checked here;
+  // createGarage rejects slugs that are not an active option.
+  const list = (field) => {
     const raw = body[field] ?? [];
-    if (!Array.isArray(raw) || raw.some((v) => !allowed.includes(v))) {
-      errors[field] = `Must be an array containing only: ${allowed.join(', ')}`;
+    if (!Array.isArray(raw) || raw.some((v) => typeof v !== 'string' || !SLUG.test(v))) {
+      errors[field] = 'Must be an array of option slugs';
       return [];
     }
     return [...new Set(raw)];
   };
-  const specializations = list('specializations', SPECIALIZATIONS);
-  const accreditations = list('accreditations', ACCREDITATIONS);
+  const specializations = list('specializations');
+  const accreditations = list('accreditations');
 
   if (body.hasLiabilityInsurance !== true) errors.hasLiabilityInsurance = 'Liability insurance must be confirmed';
 

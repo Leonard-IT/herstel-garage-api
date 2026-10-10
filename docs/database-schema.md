@@ -6,7 +6,9 @@ with `NEWSEQUENTIALID()` unless noted. The diagram renders on GitHub and in VS C
 ```mermaid
 erDiagram
     Garages ||--o{ GarageSpecializations : "offers"
+    Specializations ||--o{ GarageSpecializations : "chosen in"
     Garages ||--o{ GarageAccreditations : "holds"
+    Accreditations ||--o{ GarageAccreditations : "chosen in"
     Garages ||--o{ GarageUsers : "has logins"
 
     Customers ||--o{ CarOwnerships : "owns (history)"
@@ -45,14 +47,30 @@ erDiagram
         datetime2 RegisteredAt
     }
 
+    Specializations {
+        int Id PK "identity"
+        varchar Slug UK "lakschade, ev, ..."
+        nvarchar Name "dutch label"
+        int SortOrder
+        bit IsActive
+    }
+
     GarageSpecializations {
         uuid GarageId PK, FK
-        varchar Code PK "lakschade, ev, ..."
+        int SpecializationId PK, FK
+    }
+
+    Accreditations {
+        int Id PK "identity"
+        varchar Slug UK "rdw, bovag, ..."
+        nvarchar Name "dutch label"
+        int SortOrder
+        bit IsActive
     }
 
     GarageAccreditations {
         uuid GarageId PK, FK
-        varchar Code PK "rdw, bovag, ..."
+        int AccreditationId PK, FK
     }
 
     GarageUsers {

@@ -33,6 +33,9 @@ app.http('registerGarage', {
       context.log(`Garage registered: ${garage.id} (${garage.status}${garage.invited ? ', through an invitation' : ''})`);
       return { status: 201, jsonBody: garage };
     } catch (err) {
+      if (err.statusCode === 422) {
+        return { status: 422, jsonBody: { error: 'validation_failed', message: 'Validation failed', details: err.details } };
+      }
       if (err.statusCode === 409) {
         return {
           status: 409,

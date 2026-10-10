@@ -45,6 +45,10 @@ response has `invited: true` for a registration through an invitation. The garag
 
 Optional: `vatNumber`, `website`, `contact.jobTitle`, `employeeCount`, `liftCount`, `specializations`, `accreditations`, `newsletterOptIn`.
 
+`specializations` and `accreditations` are slugs of active rows in the `Specializations` / `Accreditations` tables; an unknown slug gives a 422.
+`GET /api/specializations` and `GET /api/accreditations` return the selectable options as `{ specializations: [{ slug, name }] }` and
+`{ accreditations: [{ slug, name }] }` (active rows only, in `SortOrder`); the sign-up form builds its checkboxes from them.
+
 | Status | Meaning |
 | --- | --- |
 | 201 | Registered: `{ id, status, registeredAt }` |

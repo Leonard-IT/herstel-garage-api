@@ -58,8 +58,13 @@ To do, so garages can be matched and judge distance:
   as audit trail.
 - **Taxatie.** Home for the independent appraisal: amount, expert, date.
 - **Photo angle.** Optional `Label` on `DamageReportImages` (front, rear, close-up...).
-- **Lookup tables.** `GarageSpecializations.Code`, `GarageAccreditations.Code`, `DamageLocation`, `DamageType` and `RepairRequests.Status`
-  are only validated in code or by CHECK. Make them lookup tables like `CustomerRepairPreferences`.
+- **Lookup tables.** `DamageLocation`, `DamageType` and `RepairRequests.Status` are only validated in code or by CHECK. Make them
+  lookup tables like `CustomerRepairPreferences`, `Specializations` and `Accreditations`.
+- **Damage types table.** `DamageReports.DamageType` is free text, checked against the static `DAMAGE_TYPES` list in `repairValidation.js`.
+  Create a separate `DamageTypes` lookup table (`Id`, `Slug`, `Name`, `SortOrder`, `IsActive`) and make `DamageReports` reference it with a
+  foreign key, with an endpoint for the form to load the options from. Do not point it at `Specializations`: that list also holds `oldtimers`
+  and `ev`, which are vehicle types, not damage types. Matching requests to garages then needs an explicit mapping between damage types
+  and specializations (a pivot table), replacing the shared vocabulary that is currently only a comment in the code.
 - **Garage contact person vs `GarageUsers`.** `Garages` stores contact name and email, which duplicates `GarageUsers` once invitations exist.
   Treat the registration contact as the first owner.
 - **Approval trail.** `Garages` has `Status` but not who approved or rejected, when, or why (`ApprovedAt`, `ApprovedBy`, rejection reason).

@@ -31,7 +31,9 @@ async function getCustomerRequest(token) {
     pool.request().input('id', sql.UniqueIdentifier, row.Id).query(`
       SELECT o.Id, o.Status, CONVERT(char(10), o.AvailableFrom, 23) AS AvailableFrom, o.ExpiresAt, o.CreatedAt, o.RespondedAt,
              g.Id AS GarageId, g.CompanyName, g.Street, g.PostalCode AS GaragePostalCode, g.City, g.Website, g.ContactPhone, g.ContactEmail,
-             (SELECT STRING_AGG(a.Code, ',') FROM dbo.GarageAccreditations a WHERE a.GarageId = g.Id) AS Accreditations
+             (SELECT STRING_AGG(a.Slug, ',') WITHIN GROUP (ORDER BY a.SortOrder)
+              FROM dbo.GarageAccreditations ga JOIN dbo.Accreditations a ON a.Id = ga.AccreditationId
+              WHERE ga.GarageId = g.Id) AS Accreditations
       FROM dbo.Offers o
       JOIN dbo.Garages g ON g.Id = o.GarageId
       WHERE o.RepairRequestId = @id

@@ -25,6 +25,30 @@ async function findProspect(tx, { invitationToken, kvkNumber }) {
 }
 
 /**
+ * Links a garage to the chosen options of a lookup table (Specializations or Accreditations), given by slug. Only active options can
+ * be chosen; an unknown or inactive slug throws an error with statusCode 422 and `details` ({ field: message }).
+ * `options`, `pivot` and `column` are fixed table and column names, never user input.
+ */
+async function linkOptions(tx, garageId, { field, slugs, options, pivot, column }) {
+  if (!slugs.length) return;
+  const active = await new sql.Request(tx).query(`SELECT Id, Slug FROM dbo.${options} WHERE IsActive = 1`);
+  const idBySlug = new Map(active.recordset.map((r) => [r.Slug, r.Id]));
+  const unknown = slugs.filter((slug) => !idBySlug.has(slug));
+  if (unknown.length) {
+    throw Object.assign(new Error(`Unknown ${field}: ${unknown.join(', ')}`), {
+      statusCode: 422,
+      details: { [field]: `Unknown ${field}: ${unknown.join(', ')}` },
+    });
+  }
+  for (const slug of slugs) {
+    await new sql.Request(tx)
+      .input('garageId', sql.UniqueIdentifier, garageId)
+      .input('optionId', sql.Int, idBySlug.get(slug))
+      .query(`INSERT INTO dbo.${pivot} (GarageId, ${column}) VALUES (@garageId, @optionId)`);
+  }
+}
+
+/**
  * Persists a new garage registration.
  *
  * A garage that signs up through the link of an invitation (`invitationToken`, the token of a share link made for a prospect) is
@@ -33,7 +57,8 @@ async function findProspect(tx, { invitationToken, kvkNumber }) {
  *
  * `coordinates` ({ latitude, longitude } of the postal code, or null when unknown) is what distances to repair requests are worked out from.
  *
- * Returns { id, status, registeredAt, invited }. A duplicate KvK number throws an error with statusCode 409.
+ * Returns { id, status, registeredAt, invited }. A duplicate KvK number throws an error with statusCode 409, a specialization or
+ * accreditation that is not an active option one with statusCode 422 (see linkOptions).
  */
 async function createGarage(garage, { invitationToken = null, coordinates = null } = {}) {
   const pool = await getPool();
@@ -79,16 +104,12 @@ async function createGarage(garage, { invitationToken = null, coordinates = null
           @latitude, @longitude)`);
     const row = result.recordset[0];
 
-    const insertCodes = async (table, codes) => {
-      for (const code of codes) {
-        await new sql.Request(tx)
-          .input('garageId', sql.UniqueIdentifier, row.Id)
-          .input('code', sql.VarChar(30), code)
-          .query(`INSERT INTO dbo.${table} (GarageId, Code) VALUES (@garageId, @code)`);
-      }
-    };
-    await insertCodes('GarageSpecializations', garage.specializations);
-    await insertCodes('GarageAccreditations', garage.accreditations);
+    await linkOptions(tx, row.Id, {
+      field: 'specializations', slugs: garage.specializations, options: 'Specializations', pivot: 'GarageSpecializations', column: 'SpecializationId',
+    });
+    await linkOptions(tx, row.Id, {
+      field: 'accreditations', slugs: garage.accreditations, options: 'Accreditations', pivot: 'GarageAccreditations', column: 'AccreditationId',
+    });
 
     if (prospect) {
       await new sql.Request(tx)
@@ -106,4 +127,14 @@ async function createGarage(garage, { invitationToken = null, coordinates = null
   }
 }
 
-module.exports = { createGarage };
+/** Returns the options ([{ slug, name }]) a garage can choose from in `table` (Specializations or Accreditations), in display order. */
+async function listActiveOptions(table) {
+  const pool = await getPool();
+  const result = await pool.request().query(`SELECT Slug, Name FROM dbo.${table} WHERE IsActive = 1 ORDER BY SortOrder, Name`);
+  return result.recordset.map((r) => ({ slug: r.Slug, name: r.Name }));
+}
+
+const listActiveSpecializations = () => listActiveOptions('Specializations');
+const listActiveAccreditations = () => listActiveOptions('Accreditations');
+
+module.exports = { createGarage, listActiveSpecializations, listActiveAccreditations };
