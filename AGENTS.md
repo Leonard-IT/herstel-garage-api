@@ -61,7 +61,16 @@ now differs from the API, and how.
 - `test/*.test.js`: `node:test` and `node:assert`. Handlers are tested by putting stub modules into `require.cache` before the function
   file is loaded (see `test/shareHandlers.test.js` and `test/customerHandlers.test.js`). Add tests for every new rule.
 - Match the style of the surrounding code: `'use strict'`, CommonJS, English comments that explain *why*, short functions.
-- Text that customers or garages see is Dutch. Code, comments, API messages and docs are English.
+
+## Language: Dutch for users, English in the code
+
+- **All user-facing text is Dutch**, in every repo and for every audience: customers, garages and platform administrators (the admin
+  pages too). That includes button labels, headings, table headers, empty and error states, `aria-label`s and other text for screen
+  readers, tooltips (`title`), dates and units (`nl-NL`, "5 u", "3 d"), and sample data that appears on screen.
+- **This holds even when the request is written in English** or quotes English labels: translate them. Ask only when a term has no
+  natural Dutch word; otherwise choose the Dutch the rest of the app already uses ("aanvraag", "aanbod", "garage", "Links delen").
+- **Everything else is English:** identifiers, comments, commit messages, docs, test descriptions, log lines and the API's error
+  `message` fields (clients show their own Dutch text per error code).
 
 ## Rules that are easy to break
 
