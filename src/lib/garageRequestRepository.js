@@ -15,6 +15,7 @@ const LIST_LIMIT = 50;
 const REQUEST_COLUMNS = `
   rr.Id, rr.CreatedAt, rr.PostalCode, dr.Id AS DamageReportId, dr.Description, dr.DamageType, dr.DamageLocation,
   c.Make, c.Model, c.BuildYear,
+  (SELECT COUNT(*) FROM dbo.RepairRequestViews v WHERE v.RepairRequestId = rr.Id) AS ViewCount,
   CASE WHEN rr.Status = 'open' AND EXISTS (
          SELECT 1 FROM dbo.Offers o
          WHERE o.RepairRequestId = rr.Id AND o.Status = 'active' AND o.ExpiresAt > SYSUTCDATETIME())
@@ -42,6 +43,8 @@ const toRequest = (row) => ({
   location: row.DamageLocation,
   postalArea: row.PostalCode ? row.PostalCode.slice(0, 4) : null,
   status: row.Status,
+  // How often garages looked at the request, all garages together (see migration 009). No names: only the number.
+  viewCount: row.ViewCount,
   myOffer: row.MyOfferId
     ? {
         id: row.MyOfferId,

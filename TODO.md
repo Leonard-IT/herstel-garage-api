@@ -91,8 +91,17 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
       once the price model is decided.
 - [ ] Release the customer's contact details to the garage once its offer is accepted. Until then garages only see the damage, photos and
       preferences (no personal data, no license plate).
-- [ ] Serve the data the overview cards currently fake with example values: view count, insured amount, status and mileage
-      (`exampleCardData.ts` in the dashboard).
+- [ ] Serve the data the overview cards currently fake with example values: insured amount, status and mileage
+      (`exampleCardData.ts` in the dashboard). The view count is real now (`viewCount`, migration 009).
+
+## Repair request views
+
+- [ ] Apply migration 009 (the pipeline does that on the next push to main) and check once against the real database: open a request,
+      refresh it (no new view), and see the count on the card. The SQL has been reviewed, not run.
+- [ ] Decide what happens to the views of a garage user that is removed. Today `GarageUsers` rows cannot be deleted while they have views
+      (the foreign key has no cascade), which keeps the history. Alternatives: soft-delete users, or store `GarageId` on the view too.
+- [ ] Use the views for the onboarding funnel's "Volledige aanvraag bekeken" step once that page gets real data.
+- [ ] Tune the 30-minute gap (`VIEW_GAP_MINUTES`) once there is real usage.
 
 ## Customer page (view and accept an offer)
 

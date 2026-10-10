@@ -7,6 +7,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 
+process.env.ADMIN_USER_IDS = 'admin-oid';
+
 const functionsDir = path.join(__dirname, '..', 'src', 'functions');
 const GARAGE_ID = '22222222-2222-2222-2222-222222222222';
 const REQUEST_ID = '11111111-1111-1111-1111-111111111111';
@@ -21,7 +23,11 @@ function stubModule(resolved, exports) {
 stubModule(require.resolve('@azure/functions', { paths: [functionsDir] }), {
   app: { http: (name, options) => { handlers[name] = options; } },
 });
-stubModule(require.resolve('../src/lib/garageAuth'), { requireGarage: (...args) => stubs.auth(...args) });
+// The caller's login id comes from the x-test-caller header here (in Azure: the token's oid claim).
+stubModule(require.resolve('../src/lib/garageAuth'), {
+  requireGarage: (...args) => stubs.auth(...args),
+  getCallerId: (headers) => headers.get('x-test-caller') ?? 'garage-oid',
+});
 stubModule(require.resolve('../src/lib/garageRequestRepository'), {
   listOpenRequests: (...args) => stubs.list(...args),
   getOpenRequest: (...args) => stubs.get(...args),
@@ -29,12 +35,13 @@ stubModule(require.resolve('../src/lib/garageRequestRepository'), {
 stubModule(require.resolve('../src/lib/blobStorage'), {
   createReadUrls: async (paths) => new Map(paths.map((p) => [p, `https://storage.test/${p}?sig=x`])),
 });
+stubModule(require.resolve('../src/lib/repairRequestViewRepository'), { recordView: (...args) => stubs.recordView(...args) });
 require('../src/functions/listGarageRepairRequests');
 require('../src/functions/getGarageRepairRequest');
 
 const context = { log: () => {}, warn: () => {}, error: () => {} };
 const callList = () => handlers.listGarageRepairRequests.handler({ headers: new Headers() }, context);
-const callGet = (id = REQUEST_ID) => handlers.getGarageRepairRequest.handler({ params: { id }, headers: new Headers() }, context);
+const callGet = (id = REQUEST_ID, headers = new Headers()) => handlers.getGarageRepairRequest.handler({ params: { id }, headers }, context);
 
 const myOffer = {
   id: '44444444-4444-4444-4444-444444444444',
@@ -62,6 +69,7 @@ test.beforeEach(() => {
   stubs.auth = async () => ({ garageId: GARAGE_ID, userId: 'u1' });
   stubs.list = async () => [];
   stubs.get = async () => null;
+  stubs.recordView = async () => true;
 });
 
 test('the list is asked for the garage of the caller', async () => {
@@ -121,4 +129,59 @@ test('the detail answers 404 for an unknown or closed request and for an id that
   assert.strictEqual((await callGet()).status, 404); // repository returns null
   stubs.get = async () => assert.fail('must not be called');
   assert.strictEqual((await callGet('not-a-guid')).status, 404);
+});
+
+// ---------- views ----------
+
+test('opening a request records a view by the calling garage user, before loading, so the count includes it', async () => {
+  const order = [];
+  let recorded;
+  stubs.recordView = async (args) => { recorded = args; order.push('record'); return true; };
+  stubs.get = async () => { order.push('load'); return { ...base({ viewCount: 3 }), imagePaths: [] }; };
+
+  const response = await callGet();
+
+  assert.strictEqual(response.status, 200);
+  assert.deepStrictEqual(recorded, { repairRequestId: REQUEST_ID, garageUserId: 'u1' });
+  assert.deepStrictEqual(order, ['record', 'load']);
+  assert.strictEqual(response.jsonBody.viewCount, 3);
+});
+
+test('a failure to record the view does not cost the garage the page', async () => {
+  stubs.recordView = async () => { throw new Error('database busy'); };
+  stubs.get = async () => ({ ...base({ viewCount: 0 }), imagePaths: [] });
+
+  const response = await callGet();
+
+  assert.strictEqual(response.status, 200);
+});
+
+test('no view is recorded for a malformed id or a caller without a garage', async () => {
+  let calls = 0;
+  stubs.recordView = async () => { calls += 1; return true; };
+
+  assert.strictEqual((await callGet('not-a-guid')).status, 404);
+  stubs.auth = async () => ({ response: { status: 403 } });
+  assert.strictEqual((await callGet()).status, 403);
+  assert.strictEqual(calls, 0);
+});
+
+test('the list passes on the view count of each request', async () => {
+  stubs.list = async () => [{ ...base({ viewCount: 12 }), thumbnailPath: null, imageCount: 0 }];
+
+  const response = await callList();
+
+  assert.strictEqual(response.jsonBody.repairRequests[0].viewCount, 12);
+});
+
+test('platform administrators are not counted: the team looking says nothing about the interest of garages', async () => {
+  let calls = 0;
+  stubs.recordView = async () => { calls += 1; return true; };
+  stubs.get = async () => ({ ...base({ viewCount: 5 }), imagePaths: [] });
+
+  const response = await callGet(REQUEST_ID, new Headers({ 'x-test-caller': 'ADMIN-OID' }));
+
+  assert.strictEqual(response.status, 200, 'the administrator still sees the request');
+  assert.strictEqual(response.jsonBody.viewCount, 5);
+  assert.strictEqual(calls, 0);
 });
