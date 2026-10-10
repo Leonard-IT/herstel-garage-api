@@ -128,7 +128,8 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
 ## Share a public link to a repair request
 
 Built (migration 007; see the README). Tested with stubs and in a browser against a mock API; **the SQL has not been run against a
-database yet**. The administrator page "Links delen" lives in the garage dashboard and is to be moved to the admin site.
+database yet**. The administrator page for it, "Garages vinden" (formerly "Links delen"), lives in the garage dashboard and is to be moved
+to the admin site.
 
 Before it works in production:
 
@@ -159,9 +160,15 @@ Tested with stubs and against the mock API; **the SQL has not been run against a
       waits, every hour counts. Build the invitation-by-email flow from "Linking a login to a garage", or at least send the team a
       message when a garage signs up through an invitation.
 - [ ] Prospects: change the status by hand (`not_interested`), edit and remove prospects, and import a list (CSV) of garages that meet
-      the criteria. Today prospects can only be added one by one, on the "Links delen" page.
+      the criteria. Today prospects can only be added one by one, on the "Garages vinden" page.
 - [ ] Pre-fill the sign-up form for an invited garage (company name, place, phone) from its prospect.
 - [ ] The onboarding funnel's "Laatste 30 dagen" and "Alle regio's" filters do nothing yet.
+
+## Nieuw reparatieverzoek (admin page in the dashboard)
+
+- [ ] Allow `https://garage.snelhersteld.nl` in the CORS settings of the storage account (methods PUT and OPTIONS, like
+      `https://snelhersteld.nl`). Without it the photo upload from the dashboard fails in production; the form on the website is not affected.
+- [ ] Optional: let the team leave out the customer's email when they do not have it yet (the API requires it today).
 
 ## Approval flow for garages that sign up themselves
 

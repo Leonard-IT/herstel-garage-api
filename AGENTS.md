@@ -68,7 +68,7 @@ now differs from the API, and how.
   pages too). That includes button labels, headings, table headers, empty and error states, `aria-label`s and other text for screen
   readers, tooltips (`title`), dates and units (`nl-NL`, "5 u", "3 d"), and sample data that appears on screen.
 - **This holds even when the request is written in English** or quotes English labels: translate them. Ask only when a term has no
-  natural Dutch word; otherwise choose the Dutch the rest of the app already uses ("aanvraag", "aanbod", "garage", "Links delen").
+  natural Dutch word; otherwise choose the Dutch the rest of the app already uses ("aanvraag", "aanbod", "garage", "Garages vinden").
 - **Everything else is English:** identifiers, comments, commit messages, docs, test descriptions, log lines and the API's error
   `message` fields (clients show their own Dutch text per error code).
 
