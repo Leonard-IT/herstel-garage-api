@@ -6,6 +6,7 @@ const { validateRepairRequest } = require('../lib/repairValidation');
 const { getActivePreferences, createRepairRequests } = require('../lib/repairRequestRepository');
 const { inspectUploads, copyBlob, discard } = require('../lib/blobStorage');
 const { customerPageUrl } = require('../lib/customerLink');
+const { tryGeocode } = require('../lib/geocoder');
 
 // The customer token only leaves the API inside the link to the customer's own page.
 const present = (requests) => requests.map(({ customerToken, ...request }) => ({
@@ -78,6 +79,7 @@ app.http('submitRepairRequest', {
       const { requests, duplicate } = await createRepairRequests({
         submissionId: value.submissionId,
         postalCode: value.postalCode,
+        coordinates: await tryGeocode(value.postalCode, context),
         carDrivable: value.carDrivable,
         carLocation: value.carLocation,
         customer: value.customer,

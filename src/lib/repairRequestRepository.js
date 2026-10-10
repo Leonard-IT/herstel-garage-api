@@ -36,9 +36,12 @@ async function listActivePreferences() {
  * Each damage must carry a pre-generated `id`, `damageType`, `images: [{ blobPath, contentType, sizeBytes }]`
  * and `preferenceIds: number[]`.
  * Every request gets its own customer token: the secret in the customer's link to that request (see migration 008).
- * Returns { requests, duplicate }; each request carries its customerToken.
+ * `coordinates` ({ latitude, longitude } of the postal code, or null when unknown) is stored on every request, for the distance a
+ * garage sees. Returns { requests, duplicate }; each request carries its customerToken.
  */
-async function createRepairRequests({ submissionId, postalCode, carDrivable = null, carLocation = null, customer, car, damages }) {
+async function createRepairRequests({
+  submissionId, postalCode, coordinates = null, carDrivable = null, carLocation = null, customer, car, damages,
+}) {
   const pool = await getPool();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -110,11 +113,13 @@ async function createRepairRequests({ submissionId, postalCode, carDrivable = nu
         .input('customerToken', sql.Char(43), createToken())
         .input('carDrivable', sql.VarChar(10), carDrivable)
         .input('carLocation', sql.VarChar(20), carLocation)
+        .input('latitude', sql.Decimal(9, 6), coordinates?.latitude ?? null)
+        .input('longitude', sql.Decimal(9, 6), coordinates?.longitude ?? null)
         .query(`INSERT INTO dbo.RepairRequests (DamageReportId, CustomerId, PostalCode, ContactFirstName, ContactLastName,
-                  ContactPhone, SubmissionId, SubmissionIndex, CustomerToken, CarDrivable, CarLocation)
+                  ContactPhone, SubmissionId, SubmissionIndex, CustomerToken, CarDrivable, CarLocation, Latitude, Longitude)
                 OUTPUT inserted.Id, inserted.Status, inserted.CreatedAt, inserted.CustomerToken
                 VALUES (@damageReportId, @customerId, @postalCode, @contactFirstName, @contactLastName,
-                  @contactPhone, @submissionId, @submissionIndex, @customerToken, @carDrivable, @carLocation)`);
+                  @contactPhone, @submissionId, @submissionIndex, @customerToken, @carDrivable, @carLocation, @latitude, @longitude)`);
       const row = result.recordset[0];
 
       for (const preferenceId of damage.preferenceIds) {

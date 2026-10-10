@@ -4,6 +4,7 @@ const { app } = require('@azure/functions');
 const { validateRegistration } = require('../lib/validation');
 const { createGarage } = require('../lib/garageRepository');
 const { isValidToken } = require('../lib/shareToken');
+const { tryGeocode } = require('../lib/geocoder');
 
 app.http('registerGarage', {
   methods: ['POST'],
@@ -27,7 +28,8 @@ app.http('registerGarage', {
     const invitationToken = isValidToken(body?.invitationToken) ? body.invitationToken : null;
 
     try {
-      const garage = await createGarage(value, { invitationToken });
+      const coordinates = await tryGeocode(value.postalCode, context);
+      const garage = await createGarage(value, { invitationToken, coordinates });
       context.log(`Garage registered: ${garage.id} (${garage.status}${garage.invited ? ', through an invitation' : ''})`);
       return { status: 201, jsonBody: garage };
     } catch (err) {

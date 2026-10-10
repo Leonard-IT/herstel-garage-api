@@ -31,9 +31,11 @@ async function findProspect(tx, { invitationToken, kvkNumber }) {
  * approved straight away: we reached out to it, so it is in the network at once. Every other registration is "pending" until someone
  * approves it. Either way a matching prospect (by invitation, or by KvK number) is linked to the new garage and marked 'registered'.
  *
+ * `coordinates` ({ latitude, longitude } of the postal code, or null when unknown) is what distances to repair requests are worked out from.
+ *
  * Returns { id, status, registeredAt, invited }. A duplicate KvK number throws an error with statusCode 409.
  */
-async function createGarage(garage, { invitationToken = null } = {}) {
+async function createGarage(garage, { invitationToken = null, coordinates = null } = {}) {
   const pool = await getPool();
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -61,16 +63,20 @@ async function createGarage(garage, { invitationToken = null } = {}) {
       .input('hasLiabilityInsurance', sql.Bit, garage.hasLiabilityInsurance)
       .input('iban', sql.VarChar(34), garage.iban)
       .input('newsletterOptIn', sql.Bit, garage.newsletterOptIn)
+      .input('latitude', sql.Decimal(9, 6), coordinates?.latitude ?? null)
+      .input('longitude', sql.Decimal(9, 6), coordinates?.longitude ?? null)
       .query(`
         INSERT INTO dbo.Garages (
           CompanyName, KvkNumber, VatNumber, Street, PostalCode, City, Website,
           ContactFirstName, ContactLastName, ContactJobTitle, ContactEmail, ContactPhone,
-          ServiceArea, EmployeeCount, LiftCount, HasLiabilityInsurance, Iban, AcceptedTermsAt, NewsletterOptIn, Status)
+          ServiceArea, EmployeeCount, LiftCount, HasLiabilityInsurance, Iban, AcceptedTermsAt, NewsletterOptIn, Status,
+          Latitude, Longitude)
         OUTPUT inserted.Id, inserted.Status, inserted.RegisteredAt
         VALUES (
           @companyName, @kvkNumber, @vatNumber, @street, @postalCode, @city, @website,
           @contactFirstName, @contactLastName, @contactJobTitle, @contactEmail, @contactPhone,
-          @serviceArea, @employeeCount, @liftCount, @hasLiabilityInsurance, @iban, SYSUTCDATETIME(), @newsletterOptIn, @status)`);
+          @serviceArea, @employeeCount, @liftCount, @hasLiabilityInsurance, @iban, SYSUTCDATETIME(), @newsletterOptIn, @status,
+          @latitude, @longitude)`);
     const row = result.recordset[0];
 
     const insertCodes = async (table, codes) => {

@@ -94,6 +94,15 @@ review everything, confirm) and send the offer to `POST /api/garage/repair-reque
 - [ ] Serve the data the overview cards currently fake with example values: insured amount, status and mileage
       (`exampleCardData.ts` in the dashboard). The view count is real now (`viewCount`, migration 009).
 
+## Distance between garage and request
+
+- [ ] Apply migration 011 (the pipeline does that on the next push to main) and try it against the real database: the SQL has only been reviewed, not run.
+- [ ] After the deploy, run `node scripts/geocode-backfill.js` once against production for the garages and requests from before the migration.
+- [ ] Try a real registration and request submission and check that `Latitude`/`Longitude` are filled (the Function App must be able to reach `api.pdok.nl`).
+- [ ] Filter or sort the open requests by distance, and let a garage set how far it is willing to travel.
+- [ ] Driving distance instead of the straight line (a routing API), if "hemelsbreed" turns out not to be good enough.
+- [ ] Retry failed lookups automatically instead of by script (a timer function that runs the backfill).
+
 ## Repair request views
 
 - [ ] Apply migration 009 (the pipeline does that on the next push to main) and check once against the real database: open a request,

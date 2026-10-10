@@ -25,6 +25,8 @@ erDiagram
         varchar VatNumber
         nvarchar Street
         char PostalCode
+        decimal Latitude "of the postal code, null if unknown"
+        decimal Longitude "of the postal code, null if unknown"
         nvarchar City
         nvarchar Website
         nvarchar ContactFirstName
@@ -112,6 +114,8 @@ erDiagram
         uuid CustomerId FK
         varchar Status "open, in_progress, completed, cancelled"
         char PostalCode "garages see first 4 digits"
+        decimal Latitude "of the postal code; never shown, only a rounded distance"
+        decimal Longitude "of the postal code; never shown, only a rounded distance"
         nvarchar ContactFirstName "as submitted"
         nvarchar ContactLastName "as submitted"
         nvarchar ContactPhone "as submitted"

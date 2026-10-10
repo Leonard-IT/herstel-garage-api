@@ -25,6 +25,7 @@ stubModule(require.resolve('../src/lib/adminAuth'), { requireAdmin: lazy('requir
 stubModule(require.resolve('../src/lib/prospectRepository'), { listProspects: lazy('listProspects'), createProspect: lazy('createProspect') });
 stubModule(require.resolve('../src/lib/garageRepository'), { createGarage: lazy('createGarage') });
 stubModule(require.resolve('../src/lib/onboardingRepository'), { listInvites: lazy('listInvites') });
+stubModule(require.resolve('../src/lib/geocoder'), { tryGeocode: lazy('tryGeocode') });
 for (const file of ['prospects', 'registerGarage', 'getOnboarding']) require(`../src/functions/${file}`);
 
 const { validateProspect } = require('../src/lib/prospectValidation');
@@ -63,6 +64,7 @@ test.beforeEach(() => {
   stubs.createProspect = async (value) => ({ id: 'p1', ...value, status: 'new' });
   stubs.createGarage = async () => ({ id: 'g1', status: 'pending', registeredAt: 'r', invited: false });
   stubs.listInvites = async () => [];
+  stubs.tryGeocode = async () => null;
 });
 
 test('the administrator endpoints for prospects and onboarding live under backoffice/', () => {
@@ -121,11 +123,26 @@ test('signing up passes the invitation token on, and only a well-formed one', as
   const invited = await call('registerGarage', { body: { ...validRegistration(), invitationToken: TOKEN } });
   assert.strictEqual(invited.status, 201);
   assert.strictEqual(invited.jsonBody.status, 'approved');
-  assert.deepStrictEqual(given[0], { invitationToken: TOKEN });
+  assert.deepStrictEqual(given[0], { invitationToken: TOKEN, coordinates: null });
 
   await call('registerGarage', { body: { ...validRegistration(), invitationToken: 'not-a-token' } });
   await call('registerGarage', { body: validRegistration() });
-  assert.deepStrictEqual(given.slice(1), [{ invitationToken: null }, { invitationToken: null }]);
+  assert.deepStrictEqual(given.slice(1), [
+    { invitationToken: null, coordinates: null },
+    { invitationToken: null, coordinates: null },
+  ]);
+});
+
+test('signing up stores the coordinates of the normalized postal code', async () => {
+  const looked = [];
+  const given = [];
+  stubs.tryGeocode = async (postalCode) => { looked.push(postalCode); return { latitude: 52.07, longitude: 5.11 }; };
+  stubs.createGarage = async (value, options) => { given.push(options); return { id: 'g1', status: 'pending', registeredAt: 'r', invited: false }; };
+
+  const response = await call('registerGarage', { body: validRegistration() }); // "3526 KL" as typed
+  assert.strictEqual(response.status, 201);
+  assert.deepStrictEqual(looked, ['3526KL']);
+  assert.deepStrictEqual(given[0].coordinates, { latitude: 52.07, longitude: 5.11 });
 });
 
 // ---------- the onboarding funnel ----------

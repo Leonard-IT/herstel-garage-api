@@ -2,6 +2,7 @@
 
 const sql = require('mssql');
 const { getPool } = require('./db');
+const { roughDistanceKm } = require('./distance');
 
 const LIST_LIMIT = 50;
 
@@ -13,7 +14,8 @@ const LIST_LIMIT = 50;
 // active offer whose deadline has not passed. That is worked out here on every read, from the Offers table, and never stored.
 // Whose offer it is stays private: a garage only gets details of its own offer (MyOffer*), the others only see the status.
 const REQUEST_COLUMNS = `
-  rr.Id, rr.CreatedAt, rr.PostalCode, dr.Id AS DamageReportId, dr.Description, dr.DamageType, dr.DamageLocation,
+  rr.Id, rr.CreatedAt, rr.PostalCode, rr.Latitude AS RequestLatitude, rr.Longitude AS RequestLongitude,
+  mg.Latitude AS GarageLatitude, mg.Longitude AS GarageLongitude, dr.Id AS DamageReportId, dr.Description, dr.DamageType, dr.DamageLocation,
   c.Make, c.Model, c.BuildYear,
   (SELECT COUNT(*) FROM dbo.RepairRequestViews v WHERE v.RepairRequestId = rr.Id) AS ViewCount,
   CASE WHEN rr.Status = 'open' AND EXISTS (
@@ -26,6 +28,7 @@ const REQUEST_JOINS = `
   FROM dbo.RepairRequests rr
   JOIN dbo.DamageReports dr ON dr.Id = rr.DamageReportId
   JOIN dbo.Cars c ON c.Id = dr.CarId
+  LEFT JOIN dbo.Garages mg ON mg.Id = @garageId
   OUTER APPLY (
     SELECT TOP 1 o.Id, CONVERT(char(10), o.AvailableFrom, 23) AS AvailableFrom, o.ValidityHours, o.ExpiresAt, o.CreatedAt
     FROM dbo.Offers o
@@ -42,6 +45,12 @@ const toRequest = (row) => ({
   damageType: row.DamageType,
   location: row.DamageLocation,
   postalArea: row.PostalCode ? row.PostalCode.slice(0, 4) : null,
+  // From the garage's postal code to the request's, as the crow flies, in whole km (see distance.js); null when either is unknown.
+  // Only this rounded number leaves the API, never the coordinates.
+  distanceKm: roughDistanceKm(
+    { latitude: row.GarageLatitude, longitude: row.GarageLongitude },
+    { latitude: row.RequestLatitude, longitude: row.RequestLongitude },
+  ),
   status: row.Status,
   // How often garages looked at the request, all garages together (see migration 009). No names: only the number.
   viewCount: row.ViewCount,
